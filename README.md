@@ -258,16 +258,6 @@ catch (OperationCanceledException)
 5. **Error handling**: Wrap operations in try-catch blocks
 6. **Thread safety**: The library is thread-safe, but avoid unnecessary concurrent operations
 
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Make your changes
-4. Add tests for new functionality
-5. Commit your changes (`git commit -m 'Add amazing feature'`)
-6. Push to the branch (`git push origin feature/amazing-feature`)
-7. Open a Pull Request
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
@@ -279,13 +269,3 @@ For issues, questions, or contributions:
 - Create an issue in the GitHub repository
 - Check existing documentation and examples
 - Review UCI protocol specification for engine compatibility questions
-
-## Changelog
-
-### Version 1.0.0
-
-- Initial release
-- Full UCI protocol support
-- Async/await API
-- Thread-safe operations
-- Comprehensive documentation
