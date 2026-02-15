@@ -377,8 +377,8 @@ public class UciEngine : IUciEngine
     {
         using (await _readyLock.AcquireAsync(cancellationToken))
         {
-            await SendAsync(UciTokens.Commands.IsReady, cancellationToken);
             IsReadyTcs = new();
+            await SendAsync(UciTokens.Commands.IsReady, cancellationToken);
         }
 
         if (cancellationToken != default)
