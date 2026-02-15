@@ -97,6 +97,7 @@ public partial class UciEngine : IUciEngine
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
             EvaluationState.Reset();
+            EvaluationState.Active = true;
 
             var command = $"{UciTokens.Commands.Go} {UciTokens.Go.Depth} {depth}";
             await SendAsync(command, cancellationToken);
@@ -112,6 +113,7 @@ public partial class UciEngine : IUciEngine
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
             EvaluationState.Reset();
+            EvaluationState.Active = true;
 
             var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
             await SendAsync(command, cancellationToken);
@@ -127,7 +129,7 @@ public partial class UciEngine : IUciEngine
         return SendAsync(UciTokens.Commands.UciNewGame, cancellationToken);
     }
 
-    public async Task SetPositionAsync(string fen, string moves = "", CancellationToken cancellationToken = default)
+    public async Task SetPositionAsync(string fen, string moves, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(fen))
             throw new ArgumentException("FEN string must have a value");
@@ -142,7 +144,9 @@ public partial class UciEngine : IUciEngine
         {
             commandBuilder
                 .Append(' ')
-                .Append(UciTokens.Position.Moves);
+                .Append(UciTokens.Position.Moves)
+                .Append(' ')
+                .Append(moves);
         }
 
         await SendAsync(commandBuilder.ToString(), cancellationToken);
@@ -158,7 +162,9 @@ public partial class UciEngine : IUciEngine
         {
             commandBuilder
                 .Append(' ')
-                .Append(UciTokens.Position.Moves);
+                .Append(UciTokens.Position.Moves)
+                .Append(' ')
+                .Append(moves);
         }
 
         await SendAsync(commandBuilder.ToString(), cancellationToken);
