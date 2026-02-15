@@ -5,10 +5,6 @@ using Lock = EngineUCI.Core.Locking.Lock;
 
 namespace EngineUCI.Core.Engine;
 
-public interface IUciEngine : IDisposable
-{
-}
-
 public partial class UciEngine : IUciEngine
 {
     public bool IsInitialized { get; private set; }
