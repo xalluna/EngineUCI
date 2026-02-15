@@ -45,10 +45,10 @@ internal static partial class Evaluation
             : null;
     }
 
-    [GeneratedRegex("(?<!sel)(?<token>depth) (?<value>[[:digit:]]+)")]
+    [GeneratedRegex("(?<!sel)(?<token>depth) (?<value>[0-9]+)")]
     private static partial Regex DepthRegex();
 
-    [GeneratedRegex("(?<token>cp) (?<value>[[:digit:]]+)")]
+    [GeneratedRegex("(?<token>cp) (?<value>-{0,1}[0-9]+)")]
     private static partial Regex EvaluationRegex();
 }
 
