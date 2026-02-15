@@ -74,7 +74,7 @@ public partial class UciEngine : IUciEngine
         await SendAsync(command, cancellationToken);
 
         using var tokenRegistration = cancellationToken.Register(() => _bestMoveTcs.TrySetCanceled(cancellationToken));
-        
+
         return await _bestMoveTcs.Task;
     }
 
@@ -84,7 +84,7 @@ public partial class UciEngine : IUciEngine
         await SendAsync(command, cancellationToken);
 
         using var tokenRegistration = cancellationToken.Register(() => _bestMoveTcs.TrySetCanceled(cancellationToken));
-        
+
         return await _bestMoveTcs.Task;
     }
 
@@ -100,7 +100,7 @@ public partial class UciEngine : IUciEngine
         }
 
         using var tokenRegistration = cancellationToken.Register(() => _evaluationTcs.TrySetCanceled(cancellationToken));
-        
+
         return await _evaluationTcs.Task;
     }
 
@@ -116,7 +116,7 @@ public partial class UciEngine : IUciEngine
         }
 
         using var tokenRegistration = cancellationToken.Register(() => _evaluationTcs.TrySetCanceled(cancellationToken));
-        
+
         return await _evaluationTcs.Task;
     }
 
@@ -147,7 +147,7 @@ public partial class UciEngine : IUciEngine
 
         await SendAsync(commandBuilder.ToString(), cancellationToken);
     }
-    
+
     public async Task SetPositionAsync(string moves = "", CancellationToken cancellationToken = default)
     {
         var commandBuilder = new StringBuilder(UciTokens.Commands.Position)
@@ -172,7 +172,7 @@ public partial class UciEngine : IUciEngine
 
         using var tokenRegistration = cancellationToken.Register(() => _isInitializedTcs.TrySetCanceled(cancellationToken));
         IsInitialized = await _isInitializedTcs.Task;
-        
+
         return IsInitialized;
     },
     defaultValue: false);
@@ -189,7 +189,7 @@ public partial class UciEngine : IUciEngine
         {
             using var tokenRegistration = cancellationToken.Register(() => _isReadyTcs.TrySetCanceled(cancellationToken));
         }
-        
+
         return await _isReadyTcs.Task;
     },
     defaultValue: false);
@@ -223,7 +223,7 @@ public partial class UciEngine : IUciEngine
         _evaluationTcs.TrySetResult(EvaluationState.Values[EvaluationState.MaxDepth]);
         EvaluationState.Active = false;
     }
-    
+
     private async Task HandleInfoReceivedAsync(string data)
     {
         using var evaluationLock = await _evaluationLock.AcquireAsync();

@@ -14,14 +14,14 @@ public abstract class UciTokens
         public const string Quit = "quit";
         public const string SetOption = "setoption";
     }
-    
+
     public static class Position
     {
         public const string StartPos = "startpos";
         public const string Fen = "fen";
         public const string Moves = "moves";
     }
-    
+
     public static class Go
     {
         public const string SearchMoves = "searchmoves";
@@ -37,13 +37,13 @@ public abstract class UciTokens
         public const string MoveTime = "movetime";
         public const string Infinite = "infinite";
     }
-    
+
     public static class SetOption
     {
         public const string Name = "name";
         public const string Value = "value";
     }
-    
+
     public static class Responses
     {
         public const string UciOk = "uciok";
@@ -55,7 +55,7 @@ public abstract class UciTokens
         public const string CopyProtection = "copyprotection";
         public const string Registration = "registration";
     }
-    
+
     public static class Info
     {
         public const string Depth = "depth";
@@ -76,7 +76,7 @@ public abstract class UciTokens
         public const string Refutation = "refutation";
         public const string CurrLine = "currline";
     }
-    
+
     public static class Score
     {
         public const string Cp = "cp";
@@ -84,13 +84,13 @@ public abstract class UciTokens
         public const string LowerBound = "lowerbound";
         public const string UpperBound = "upperbound";
     }
-    
+
     public static class Id
     {
         public const string Name = "name";
         public const string Author = "author";
     }
-    
+
     public static class Option
     {
         public const string Name = "name";
@@ -100,7 +100,7 @@ public abstract class UciTokens
         public const string Max = "max";
         public const string Var = "var";
     }
-    
+
     public static class OptionTypes
     {
         public const string Check = "check";

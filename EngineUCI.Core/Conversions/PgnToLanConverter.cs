@@ -186,7 +186,7 @@ public class PgnToLongAlgebraicConverter
         return result;
     }
 
-    private (int rank, int file) FindSourceSquare(char piece, int destRank, int destFile, 
+    private (int rank, int file) FindSourceSquare(char piece, int destRank, int destFile,
         char? sourceFile, int? sourceRank)
     {
         char searchPiece = whiteToMove ? piece : char.ToLower(piece);
@@ -287,7 +287,7 @@ public class PgnToLongAlgebraicConverter
 
     private bool CanQueenMoveTo(int srcRank, int srcFile, int destRank, int destFile)
     {
-        return CanRookMoveTo(srcRank, srcFile, destRank, destFile) || 
+        return CanRookMoveTo(srcRank, srcFile, destRank, destFile) ||
                 CanBishopMoveTo(srcRank, srcFile, destRank, destFile);
     }
 
@@ -319,7 +319,7 @@ public class PgnToLongAlgebraicConverter
     private void ExecuteMove(int srcRank, int srcFile, int destRank, int destFile, char? promotionPiece)
     {
         char piece = board[srcRank, srcFile];
-        
+
         if (promotionPiece.HasValue)
         {
             piece = whiteToMove ? promotionPiece.Value : char.ToLower(promotionPiece.Value);
