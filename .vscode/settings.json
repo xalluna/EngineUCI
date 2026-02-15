@@ -1,0 +1,32 @@
+{
+  "cSpell.words": [
+    "bestmove",
+    "binc",
+    "btime",
+    "Centipawn",
+    "copyprotection",
+    "cpuload",
+    "currline",
+    "currmove",
+    "currmovenumber",
+    "hashfull",
+    "isready",
+    "lowerbound",
+    "movestogo",
+    "movetime",
+    "multipv",
+    "ponderhit",
+    "readyok",
+    "sbhits",
+    "searchmoves",
+    "seldepth",
+    "setoption",
+    "startpos",
+    "tbhits",
+    "ucinewgame",
+    "uciok",
+    "upperbound",
+    "winc",
+    "wtime"
+  ]
+}
