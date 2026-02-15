@@ -21,7 +21,7 @@ internal static partial class BestMove
             : string.Empty;
     }
 
-    [GeneratedRegex("(?<response>bestmove) (?<bestMove>[a-h][1-8][a-h][1-h]) (?<ponder>ponder) (?<ponderMove>[a-h][1-8][a-h][1-h])")]
+    [GeneratedRegex("(?<response>bestmove) (?<bestMove>[a-h][1-8][a-h][1-8]) (?<ponder>ponder) (?<ponderMove>[a-h][1-8][a-h][1-8])")]
     private static partial Regex BestMoveRegex();
 }
 
