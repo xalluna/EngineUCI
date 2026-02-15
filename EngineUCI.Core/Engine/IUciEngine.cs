@@ -14,6 +14,10 @@ public interface IUciEngine : IDisposable
     /// </value>
     public bool IsInitialized { get; }
 
+    public bool IsDisposed { get; }
+
+    public event EventHandler? OnDispose;
+
     /// <summary>
     /// Starts the UCI engine process and begins monitoring for responses.
     /// This method must be called before any other engine operations.

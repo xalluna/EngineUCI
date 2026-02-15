@@ -9,7 +9,7 @@ namespace EngineUCI.Core.Engine;
 /// Implements a Universal Chess Interface (UCI) compliant chess engine wrapper.
 /// Manages communication with an external chess engine process through standard input/output.
 /// </summary>
-public partial class UciEngine : IUciEngine
+public class UciEngine : IUciEngine
 {
     /// <summary>
     /// Gets a value indicating whether the UCI engine has been successfully initialized.
@@ -19,10 +19,14 @@ public partial class UciEngine : IUciEngine
     /// </value>
     public bool IsInitialized { get; private set; }
 
+    public bool IsDisposed { get; private set; }
+
+    public event EventHandler? OnDispose;
+
     /// <summary>
     /// The external chess engine process.
     /// </summary>
-    private Process _process { get; init; }
+    private Process Process { get; init; }
 
     /// <summary>
     /// Synchronizes read operations from the engine process.
@@ -40,6 +44,11 @@ public partial class UciEngine : IUciEngine
     private readonly Lock _readyLock = new();
 
     /// <summary>
+    /// Synchronizes "bestmove" read/write operations.
+    /// </summary>
+    private readonly Lock _bestMoveLock = new();
+
+    /// <summary>
     /// Synchronizes evaluation operations to prevent concurrent evaluations.
     /// </summary>
     private readonly Lock _evaluationLock = new();
@@ -47,22 +56,22 @@ public partial class UciEngine : IUciEngine
     /// <summary>
     /// Task completion source for engine initialization.
     /// </summary>
-    private TaskCompletionSource<bool> _isInitializedTcs { get; set; } = new();
+    private TaskCompletionSource<bool> IsInitializedTcs { get; set; } = new();
 
     /// <summary>
     /// Task completion source for engine ready state.
     /// </summary>
-    private TaskCompletionSource<bool> _isReadyTcs { get; set; } = new();
+    private TaskCompletionSource<bool> IsReadyTcs { get; set; } = new();
 
     /// <summary>
     /// Task completion source for best move calculations.
     /// </summary>
-    private TaskCompletionSource<string> _bestMoveTcs { get; set; } = new();
+    private TaskCompletionSource<string> BestMoveTcs { get; set; } = new();
 
     /// <summary>
     /// Task completion source for position evaluations.
     /// </summary>
-    private TaskCompletionSource<string> _evaluationTcs { get; set; } = new();
+    private TaskCompletionSource<string> EvaluationTcs { get; set; } = new();
 
     /// <summary>
     /// Manages the state of ongoing position evaluations.
@@ -76,14 +85,14 @@ public partial class UciEngine : IUciEngine
     /// <exception cref="ArgumentException">Thrown when executablePath is null or empty.</exception>
     public UciEngine(string executablePath)
     {
-        _process = new Process();
+        Process = new Process();
 
-        _process.StartInfo.FileName = executablePath;
-        _process.StartInfo.UseShellExecute = false;
-        _process.StartInfo.RedirectStandardInput = true;
-        _process.StartInfo.RedirectStandardOutput = true;
-        _process.StartInfo.RedirectStandardError = true;
-        _process.EnableRaisingEvents = true;
+        Process.StartInfo.FileName = executablePath;
+        Process.StartInfo.UseShellExecute = false;
+        Process.StartInfo.RedirectStandardInput = true;
+        Process.StartInfo.RedirectStandardOutput = true;
+        Process.StartInfo.RedirectStandardError = true;
+        Process.EnableRaisingEvents = true;
     }
 
     /// <summary>
@@ -96,7 +105,7 @@ public partial class UciEngine : IUciEngine
     /// </remarks>
     public void Start()
     {
-        _process.OutputDataReceived += new DataReceivedEventHandler(async (sender, e) =>
+        Process.OutputDataReceived += new DataReceivedEventHandler(async (sender, e) =>
         {
             using var _readyLock = await _processReadLock.AcquireAsync();
 
@@ -109,12 +118,12 @@ public partial class UciEngine : IUciEngine
             }
 
             if (e.Data.Contains(UciTokens.Responses.Info)) await HandleInfoReceivedAsync(e.Data);
-            if (e.Data.Contains(UciTokens.Responses.BestMove)) HandleBestMove(e.Data);
+            if (e.Data.Contains(UciTokens.Responses.BestMove)) await HandleBestMoveAsync(e.Data);
             if (e.Data.Contains(UciTokens.Responses.BestMove) && EvaluationState.Active) await HandleSearchEndAsync();
         });
 
-        _process.Start();
-        _process.BeginOutputReadLine();
+        Process.Start();
+        Process.BeginOutputReadLine();
     }
 
     /// <summary>
@@ -130,8 +139,8 @@ public partial class UciEngine : IUciEngine
     {
         using var writeLock = await _processWriteLock.AcquireAsync(cancellationToken);
 
-        await _process.StandardInput.WriteLineAsync(command);
-        await _process.StandardInput.FlushAsync(cancellationToken);
+        await Process.StandardInput.WriteLineAsync(command);
+        await Process.StandardInput.FlushAsync(cancellationToken);
     }
 
     /// <summary>
@@ -149,12 +158,17 @@ public partial class UciEngine : IUciEngine
     /// </remarks>
     public async Task<string> GetBestMoveAsync(int depth = 20, CancellationToken cancellationToken = default)
     {
-        var command = $"{UciTokens.Commands.Go} {UciTokens.Go.Depth} {depth}";
-        await SendAsync(command, cancellationToken);
+        using (await _bestMoveLock.AcquireAsync(cancellationToken))
+        {
+            BestMoveTcs = new();
 
-        using var tokenRegistration = cancellationToken.Register(() => _bestMoveTcs.TrySetCanceled(cancellationToken));
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.Depth} {depth}";
+            await SendAsync(command, cancellationToken);
+        }
 
-        return await _bestMoveTcs.Task;
+        using var tokenRegistration = cancellationToken.Register(() => BestMoveTcs.TrySetCanceled(cancellationToken));
+
+        return await BestMoveTcs.Task;
     }
 
     /// <summary>
@@ -172,12 +186,17 @@ public partial class UciEngine : IUciEngine
     /// </remarks>
     public async Task<string> GetBestMoveAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default)
     {
-        var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
-        await SendAsync(command, cancellationToken);
+        using (await _bestMoveLock.AcquireAsync(cancellationToken))
+        {
+            BestMoveTcs = new();
 
-        using var tokenRegistration = cancellationToken.Register(() => _bestMoveTcs.TrySetCanceled(cancellationToken));
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
+            await SendAsync(command, cancellationToken);
+        }
 
-        return await _bestMoveTcs.Task;
+        using var tokenRegistration = cancellationToken.Register(() => BestMoveTcs.TrySetCanceled(cancellationToken));
+
+        return await BestMoveTcs.Task;
     }
 
     /// <summary>
@@ -197,6 +216,8 @@ public partial class UciEngine : IUciEngine
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
+            EvaluationTcs = new();
+
             EvaluationState.Reset();
             EvaluationState.Active = true;
 
@@ -204,9 +225,9 @@ public partial class UciEngine : IUciEngine
             await SendAsync(command, cancellationToken);
         }
 
-        using var tokenRegistration = cancellationToken.Register(() => _evaluationTcs.TrySetCanceled(cancellationToken));
+        using var tokenRegistration = cancellationToken.Register(() => EvaluationTcs.TrySetCanceled(cancellationToken));
 
-        return await _evaluationTcs.Task;
+        return await EvaluationTcs.Task;
     }
 
     /// <summary>
@@ -226,6 +247,8 @@ public partial class UciEngine : IUciEngine
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
+            EvaluationTcs = new();
+
             EvaluationState.Reset();
             EvaluationState.Active = true;
 
@@ -233,9 +256,9 @@ public partial class UciEngine : IUciEngine
             await SendAsync(command, cancellationToken);
         }
 
-        using var tokenRegistration = cancellationToken.Register(() => _evaluationTcs.TrySetCanceled(cancellationToken));
+        using var tokenRegistration = cancellationToken.Register(() => EvaluationTcs.TrySetCanceled(cancellationToken));
 
-        return await _evaluationTcs.Task;
+        return await EvaluationTcs.Task;
     }
 
     /// <summary>
@@ -331,8 +354,8 @@ public partial class UciEngine : IUciEngine
     {
         await SendAsync(UciTokens.Commands.Uci, cancellationToken);
 
-        using var tokenRegistration = cancellationToken.Register(() => _isInitializedTcs.TrySetCanceled(cancellationToken));
-        IsInitialized = await _isInitializedTcs.Task;
+        using var tokenRegistration = cancellationToken.Register(() => IsInitializedTcs.TrySetCanceled(cancellationToken));
+        IsInitialized = await IsInitializedTcs.Task;
 
         return IsInitialized;
     },
@@ -354,16 +377,16 @@ public partial class UciEngine : IUciEngine
     {
         using (await _readyLock.AcquireAsync(cancellationToken))
         {
+            IsReadyTcs = new();
             await SendAsync(UciTokens.Commands.IsReady, cancellationToken);
-            _isReadyTcs = new();
         }
 
         if (cancellationToken != default)
         {
-            using var tokenRegistration = cancellationToken.Register(() => _isReadyTcs.TrySetCanceled(cancellationToken));
+            using var tokenRegistration = cancellationToken.Register(() => IsReadyTcs.TrySetCanceled(cancellationToken));
         }
 
-        return await _isReadyTcs.Task;
+        return await IsReadyTcs.Task;
     },
     defaultValue: false);
 
@@ -389,7 +412,7 @@ public partial class UciEngine : IUciEngine
     /// </summary>
     private void HandleInitialization()
     {
-        _isInitializedTcs.TrySetResult(true);
+        IsInitializedTcs.TrySetResult(true);
     }
 
     /// <summary>
@@ -399,16 +422,19 @@ public partial class UciEngine : IUciEngine
     private async Task HandleIsReadyAsync()
     {
         using var readyLock = await _readyLock.AcquireAsync();
-        _isReadyTcs.TrySetResult(true);
+        IsReadyTcs.TrySetResult(true);
     }
 
     /// <summary>
     /// Handles the "bestmove" response from the engine, extracting and returning the best move.
     /// </summary>
     /// <param name="data">The raw response data from the engine containing the bestmove.</param>
-    private void HandleBestMove(string data)
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    private async Task HandleBestMoveAsync(string data)
     {
-        _bestMoveTcs.TrySetResult(BestMove.Parse(data));
+        using var bestMoveLock = await _bestMoveLock.AcquireAsync();
+
+        BestMoveTcs.TrySetResult(BestMove.Parse(data));
     }
 
     /// <summary>
@@ -418,7 +444,7 @@ public partial class UciEngine : IUciEngine
     private async Task HandleSearchEndAsync()
     {
         using var evaluationLock = await _evaluationLock.AcquireAsync();
-        _evaluationTcs.TrySetResult(EvaluationState.Values[EvaluationState.MaxDepth]);
+        EvaluationTcs.TrySetResult(EvaluationState.Values[EvaluationState.MaxDepth]);
         EvaluationState.Active = false;
     }
 
@@ -466,7 +492,9 @@ public partial class UciEngine : IUciEngine
     /// </remarks>
     public void Dispose()
     {
-        _process.Dispose();
+        Process.Dispose();
+        IsDisposed = true;
+        OnDispose?.Invoke(this, EventArgs.Empty);
         GC.SuppressFinalize(this);
     }
 }
