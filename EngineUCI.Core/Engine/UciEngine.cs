@@ -44,6 +44,11 @@ public class UciEngine : IUciEngine
     private readonly Lock _readyLock = new();
 
     /// <summary>
+    /// Synchronizes "bestmove" read/write operations.
+    /// </summary>
+    private readonly Lock _bestMoveLock = new();
+
+    /// <summary>
     /// Synchronizes evaluation operations to prevent concurrent evaluations.
     /// </summary>
     private readonly Lock _evaluationLock = new();
@@ -113,7 +118,7 @@ public class UciEngine : IUciEngine
             }
 
             if (e.Data.Contains(UciTokens.Responses.Info)) await HandleInfoReceivedAsync(e.Data);
-            if (e.Data.Contains(UciTokens.Responses.BestMove)) HandleBestMove(e.Data);
+            if (e.Data.Contains(UciTokens.Responses.BestMove)) await HandleBestMoveAsync(e.Data);
             if (e.Data.Contains(UciTokens.Responses.BestMove) && EvaluationState.Active) await HandleSearchEndAsync();
         });
 
@@ -153,8 +158,13 @@ public class UciEngine : IUciEngine
     /// </remarks>
     public async Task<string> GetBestMoveAsync(int depth = 20, CancellationToken cancellationToken = default)
     {
-        var command = $"{UciTokens.Commands.Go} {UciTokens.Go.Depth} {depth}";
-        await SendAsync(command, cancellationToken);
+        using (await _bestMoveLock.AcquireAsync(cancellationToken))
+        {
+            BestMoveTcs = new();
+
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.Depth} {depth}";
+            await SendAsync(command, cancellationToken);
+        }
 
         using var tokenRegistration = cancellationToken.Register(() => BestMoveTcs.TrySetCanceled(cancellationToken));
 
@@ -176,8 +186,13 @@ public class UciEngine : IUciEngine
     /// </remarks>
     public async Task<string> GetBestMoveAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default)
     {
-        var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
-        await SendAsync(command, cancellationToken);
+        using (await _bestMoveLock.AcquireAsync(cancellationToken))
+        {
+            BestMoveTcs = new();
+
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
+            await SendAsync(command, cancellationToken);
+        }
 
         using var tokenRegistration = cancellationToken.Register(() => BestMoveTcs.TrySetCanceled(cancellationToken));
 
@@ -201,6 +216,8 @@ public class UciEngine : IUciEngine
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
+            EvaluationTcs = new();
+
             EvaluationState.Reset();
             EvaluationState.Active = true;
 
@@ -230,6 +247,8 @@ public class UciEngine : IUciEngine
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
+            EvaluationTcs = new();
+
             EvaluationState.Reset();
             EvaluationState.Active = true;
 
@@ -410,8 +429,11 @@ public class UciEngine : IUciEngine
     /// Handles the "bestmove" response from the engine, extracting and returning the best move.
     /// </summary>
     /// <param name="data">The raw response data from the engine containing the bestmove.</param>
-    private void HandleBestMove(string data)
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    private async Task HandleBestMoveAsync(string data)
     {
+        using var bestMoveLock = await _bestMoveLock.AcquireAsync();
+
         BestMoveTcs.TrySetResult(BestMove.Parse(data));
     }
 
