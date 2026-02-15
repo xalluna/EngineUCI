@@ -217,13 +217,14 @@ public partial class UciEngine : IUciEngine
 
     private async Task HandleSearchEndAsync()
     {
-        using var evaluationLock = _evaluationLock.AcquireAsync();
+        using var evaluationLock = await _evaluationLock.AcquireAsync();
         _evaluationTcs.TrySetResult(EvaluationState.Values[EvaluationState.MaxDepth]);
+        EvaluationState.Active = false;
     }
     
     private async Task HandleInfoReceivedAsync(string data)
     {
-        using var evaluationLock = _evaluationLock.AcquireAsync();
+        using var evaluationLock = await _evaluationLock.AcquireAsync();
 
         if (!EvaluationState.Active) return;
 
