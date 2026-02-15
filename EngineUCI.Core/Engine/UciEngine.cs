@@ -43,8 +43,6 @@ public partial class UciEngine : IUciEngine
 
             if (string.IsNullOrEmpty(e.Data)) return;
 
-            Console.WriteLine($"[{_process.Id}] {e.Data}");
-
             switch (e.Data)
             {
                 case UciTokens.Responses.UciOk: HandleInitialization(); break;
