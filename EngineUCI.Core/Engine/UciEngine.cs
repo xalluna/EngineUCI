@@ -113,7 +113,6 @@ public class UciEngine : IUciEngine
     {
         Process.OutputDataReceived += new DataReceivedEventHandler(async (sender, e) =>
         {
-            using var _readyLock = await _processReadLock.AcquireAsync();
             using var _readLock = await _processReadLock.AcquireAsync();
 
             if (string.IsNullOrEmpty(e.Data)) return;
