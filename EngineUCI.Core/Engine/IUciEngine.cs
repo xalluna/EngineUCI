@@ -93,6 +93,8 @@ public interface IUciEngine : IDisposable
     /// <returns>A task that represents the asynchronous operation.</returns>
     Task SetPositionAsync(string moves = "", CancellationToken cancellationToken = default);
 
+    Task SetMultiPvAsync(int multiPvMode = 1, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Asynchronously waits for the engine to complete initialization and respond with "uciok".
     /// </summary>
