@@ -93,6 +93,12 @@ public interface IUciEngine : IDisposable
     /// <returns>A task that represents the asynchronous operation.</returns>
     Task SetPositionAsync(string moves = "", CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Asynchronously sets the number of principal variations (Multi-PV) the engine should calculate.
+    /// </summary>
+    /// <param name="multiPvMode">The number of principal variations to calculate. Default is 1 (single best line).</param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
     Task SetMultiPvAsync(int multiPvMode = 1, CancellationToken cancellationToken = default);
 
     /// <summary>
