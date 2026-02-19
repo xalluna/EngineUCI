@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using EngineUCI.Core.Parsing;
 using Lock = EngineUCI.Core.Locking.Lock;
 
 namespace EngineUCI.Core.Engine;
@@ -79,6 +80,11 @@ public class UciEngine : IUciEngine
     private readonly UciEvaluationState EvaluationState = new();
 
     /// <summary>
+    /// Parser for extracting information from UCI info response lines
+    /// </summary>
+    private readonly UciInfoResponseParser UciInfoResponseParser = new();
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="UciEngine"/> class.
     /// </summary>
     /// <param name="executablePath">The file path to the UCI chess engine executable.</param>
@@ -107,7 +113,7 @@ public class UciEngine : IUciEngine
     {
         Process.OutputDataReceived += new DataReceivedEventHandler(async (sender, e) =>
         {
-            using var _readyLock = await _processReadLock.AcquireAsync();
+            using var _readLock = await _processReadLock.AcquireAsync();
 
             if (string.IsNullOrEmpty(e.Data)) return;
 
@@ -338,6 +344,21 @@ public class UciEngine : IUciEngine
         await SendAsync(commandBuilder.ToString(), cancellationToken);
     }
 
+    public async Task SetMultiPvAsync(int multiPvMode = 1, CancellationToken cancellationToken = default)
+    {
+        var commandBuilder = new StringBuilder(UciTokens.Commands.SetOption)
+        .Append(' ')
+        .Append(UciTokens.SetOption.Name)
+        .Append(' ')
+        .Append(UciTokens.OptionId.MultiPv)
+        .Append(' ')
+        .Append(UciTokens.SetOption.Value)
+        .Append(' ')
+        .Append(multiPvMode);
+
+        await SendAsync(commandBuilder.ToString(), cancellationToken);
+    }
+
     /// <summary>
     /// Asynchronously waits for the engine to complete initialization and respond with "uciok".
     /// </summary>
@@ -444,7 +465,7 @@ public class UciEngine : IUciEngine
     private async Task HandleSearchEndAsync()
     {
         using var evaluationLock = await _evaluationLock.AcquireAsync();
-        EvaluationTcs.TrySetResult(EvaluationState.Values[EvaluationState.MaxDepth]);
+        EvaluationTcs.TrySetResult(EvaluationState.Values[1][EvaluationState.MaxDepth]);
         EvaluationState.Active = false;
     }
 
@@ -459,10 +480,18 @@ public class UciEngine : IUciEngine
 
         if (!EvaluationState.Active) return;
 
-        var result = Evaluation.Parse(data);
+        var result = UciInfoResponseParser.Parse(data);
 
         if (result is null) return;
-        if (!EvaluationState.Values.TryAdd(result.Depth, result.Evaluation)) return;
+
+        if (!EvaluationState.Values.TryGetValue(result.MultiPv, out var depthResults))
+        {
+            depthResults = new();
+            EvaluationState.Values[result.MultiPv] = depthResults;
+        }
+
+
+        if (!depthResults.TryAdd(result.Depth, result.Score)) return;
 
         if (EvaluationState.MaxDepth < result.Depth) EvaluationState.MaxDepth = result.Depth;
     }
@@ -517,7 +546,7 @@ internal class UciEvaluationState
     /// <summary>
     /// A thread-safe dictionary that maps search depths to their corresponding evaluations.
     /// </summary>
-    public ConcurrentDictionary<int, string> Values = new();
+    public ConcurrentDictionary<int, ConcurrentDictionary<int, string>> Values = new();
 
     /// <summary>
     /// Resets the evaluation state to its initial values.

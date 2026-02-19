@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 
-namespace EngineUCI.Core.Engine;
+namespace EngineUCI.Core.Parsing;
 
 /// <summary>
 /// Provides parsing functionality for UCI "bestmove" responses from chess engines.

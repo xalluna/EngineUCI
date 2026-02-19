@@ -242,6 +242,11 @@ public abstract class UciTokens
         public const string MultiPv = "multipv";
 
         /// <summary>
+        /// The score centipawn prefix.
+        /// </summary>
+        public const string Cp = "cp";
+
+        /// <summary>
         /// The score of the position.
         /// </summary>
         public const string Score = "score";
@@ -404,5 +409,38 @@ public abstract class UciTokens
         /// Text string option type.
         /// </summary>
         public const string String = "string";
+    }
+
+    public static class OptionId
+    {
+        // Standard UCI Options
+        public const string Hash = "Hash";
+        public const string NalimovPath = "NalimovPath";
+        public const string NalimovCache = "NalimovCache";
+        public const string Ponder = "Ponder";
+        public const string OwnBook = "OwnBook";
+        public const string MultiPv = "MultiPV";
+        public const string UciShowCurrLine = "UCI_ShowCurrLine";
+        public const string UciShowRefutations = "UCI_ShowRefutations";
+        public const string UciLimitStrength = "UCI_LimitStrength";
+        public const string UciElo = "UCI_Elo";
+        public const string UciAnalyseMode = "UCI_AnalyseMode";
+        public const string UciOpponent = "UCI_Opponent";
+        public const string UciEngineAbout = "UCI_EngineAbout";
+        public const string UciShredderbasesPath = "UCI_ShredderbasesPath";
+        public const string UciSetPositionValue = "UCI_SetPositionValue";
+        
+        // Common Engine-Specific Options (widely used)
+        public const string Threads = "Threads";
+        public const string ClearHash = "Clear Hash";
+        public const string Contempt = "Contempt";
+        public const string MoveOverhead = "Move Overhead";
+        public const string SlowMover = "Slow Mover";
+        public const string NodesTime = "nodestime";
+        public const string MinimumThinkingTime = "Minimum Thinking Time";
+        public const string SyzygyPath = "SyzygyPath";
+        public const string SyzygyProbeDepth = "SyzygyProbeDepth";
+        public const string SyzygyProbeLimit = "SyzygyProbeLimit";
+        public const string Syzygy50MoveRule = "Syzygy50MoveRule";
     }
 }
