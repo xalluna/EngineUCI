@@ -1,3 +1,5 @@
+using EngineUCI.Core.Engine.Evaluations;
+
 namespace EngineUCI.Core.Engine;
 
 /// <summary>
@@ -52,10 +54,12 @@ public interface IUciEngine : IDisposable
     /// <param name="depth">The maximum search depth in plies (half-moves). Default is 20.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the position
-    /// evaluation in centipawns (e.g., "150", "-75").
+    /// A task that represents the asynchronous operation. The task result is an
+    /// <see cref="Evaluations.EvaluationCollection"/> containing one <see cref="Evaluations.Evaluation"/>
+    /// per principal variation, ordered by rank. Use <see cref="Evaluations.EvaluationCollection.BestEvaluation"/>
+    /// to access the top-ranked line directly.
     /// </returns>
-    Task<string> EvaluateAsync(int depth = 20, CancellationToken cancellationToken = default);
+    Task<EvaluationCollection> EvaluateAsync(int depth = 20, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Asynchronously evaluates the current position using a specified time limit.
@@ -63,10 +67,12 @@ public interface IUciEngine : IDisposable
     /// <param name="timeSpan">The maximum time allowed for the engine to evaluate the position.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the position
-    /// evaluation in centipawns (e.g., "150", "-75").
+    /// A task that represents the asynchronous operation. The task result is an
+    /// <see cref="Evaluations.EvaluationCollection"/> containing one <see cref="Evaluations.Evaluation"/>
+    /// per principal variation, ordered by rank. Use <see cref="Evaluations.EvaluationCollection.BestEvaluation"/>
+    /// to access the top-ranked line directly.
     /// </returns>
-    Task<string> EvaluateAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default);
+    Task<EvaluationCollection> EvaluateAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Asynchronously signals the engine to start a new game, resetting internal state.
