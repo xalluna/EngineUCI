@@ -216,7 +216,7 @@ public class UciEngine : IUciEngine
         {
             BestMoveTcs = new();
 
-            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.TotalMilliseconds}";
             await SendAsync(command, cancellationToken);
         }
 
@@ -282,7 +282,7 @@ public class UciEngine : IUciEngine
             EvaluationState.Reset();
             EvaluationState.Active = true;
 
-            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.Milliseconds}";
+            var command = $"{UciTokens.Commands.Go} {UciTokens.Go.MoveTime} {timeSpan.TotalMilliseconds}";
             await SendAsync(command, cancellationToken);
         }
 
@@ -517,7 +517,7 @@ public class UciEngine : IUciEngine
     {
         using var evaluationLock = await _evaluationLock.AcquireAsync();
 
-        var enumerable = EvaluationState.Values.Select(x => x.Value[EvaluationState.MaxDepth]);
+        var enumerable = EvaluationState.Values.Select(x => x.Value.Values.OrderByDescending(v => v.Depth).First());
         var evaluationCollection = new EvaluationCollection(enumerable);
 
         EvaluationTcs.TrySetResult(evaluationCollection);
@@ -545,7 +545,7 @@ public class UciEngine : IUciEngine
             EvaluationState.Values[result.MultiPv] = depthResults;
         }
 
-        if (!depthResults.TryAdd(result.Depth, new Evaluation(result.Depth, result.MultiPv, result.Score))) return;
+        if (!depthResults.TryAdd(result.Depth, new Evaluation(result.Depth, result.MultiPv, result.Score, result.Pv ?? string.Empty))) return;
 
         if (EvaluationState.MaxDepth < result.Depth) EvaluationState.MaxDepth = result.Depth;
     }
