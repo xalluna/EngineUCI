@@ -71,7 +71,7 @@ public class UciEngine : IUciEngine
     private TaskCompletionSource<string> BestMoveTcs { get; set; } = new();
 
     /// <summary>
-    /// Task completion source for position evaluations.
+    /// Task completion source that resolves to an <see cref="EvaluationCollection"/> when a search completes.
     /// </summary>
     private TaskCompletionSource<EvaluationCollection> EvaluationTcs { get; set; } = new();
 
@@ -212,8 +212,10 @@ public class UciEngine : IUciEngine
     /// <param name="depth">The maximum search depth in plies (half-moves). Default is 20.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the position
-    /// evaluation in centipawns (e.g., "150", "-75").
+    /// A task that represents the asynchronous operation. The task result is an
+    /// <see cref="EvaluationCollection"/> containing one <see cref="Evaluations.Evaluation"/>
+    /// per principal variation at the maximum depth reached, ordered by rank. Use
+    /// <see cref="EvaluationCollection.BestEvaluation"/> to access the top-ranked line directly.
     /// </returns>
     /// <remarks>
     /// This method collects evaluation information during the search process and returns
@@ -243,8 +245,10 @@ public class UciEngine : IUciEngine
     /// <param name="timeSpan">The maximum time allowed for the engine to evaluate the position.</param>
     /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
     /// <returns>
-    /// A task that represents the asynchronous operation. The task result contains the position
-    /// evaluation in centipawns (e.g., "150", "-75").
+    /// A task that represents the asynchronous operation. The task result is an
+    /// <see cref="EvaluationCollection"/> containing one <see cref="Evaluations.Evaluation"/>
+    /// per principal variation at the maximum depth reached, ordered by rank. Use
+    /// <see cref="EvaluationCollection.BestEvaluation"/> to access the top-ranked line directly.
     /// </returns>
     /// <remarks>
     /// This method collects evaluation information during the search process and returns
@@ -487,14 +491,13 @@ public class UciEngine : IUciEngine
 
         var result = UciInfoResponseParser.Parse(data);
 
-        if (result is null) return;
+        if (result is null or {MultiPv: 0}) return;
 
         if (!EvaluationState.Values.TryGetValue(result.MultiPv, out var depthResults))
         {
             depthResults = new();
             EvaluationState.Values[result.MultiPv] = depthResults;
         }
-
 
         if (!depthResults.TryAdd(result.Depth, new Evaluation(result.Depth, result.MultiPv, result.Score))) return;
 
@@ -549,7 +552,9 @@ internal class UciEvaluationState
     public bool Active { get; set; }
 
     /// <summary>
-    /// A thread-safe dictionary that maps search depths to their corresponding evaluations.
+    /// A thread-safe dictionary that maps each principal variation rank to a dictionary of
+    /// search depth to its corresponding <see cref="Evaluation"/>.
+    /// The outer key is the MultiPV rank (1 = best line); the inner key is the search depth in plies.
     /// </summary>
     public ConcurrentDictionary<int, ConcurrentDictionary<int, Evaluation>> Values = new();
 
