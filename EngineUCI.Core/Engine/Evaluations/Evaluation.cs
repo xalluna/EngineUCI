@@ -31,4 +31,7 @@ namespace EngineUCI.Core.Engine.Evaluations;
 /// </para>
 /// </remarks>
 /// <seealso cref="EvaluationCollection"/>
-public record Evaluation(int Depth, int Rank, string Score);
+public record Evaluation(int Depth, int Rank, string Score, string Continuation)
+{
+    public string BestMove = Continuation.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+};
