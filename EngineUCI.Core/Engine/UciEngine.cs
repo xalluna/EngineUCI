@@ -1,6 +1,7 @@
 ﻿using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
+using EngineUCI.Core.Engine.Evaluations;
 using EngineUCI.Core.Parsing;
 using Lock = EngineUCI.Core.Locking.Lock;
 
@@ -72,7 +73,7 @@ public class UciEngine : IUciEngine
     /// <summary>
     /// Task completion source for position evaluations.
     /// </summary>
-    private TaskCompletionSource<string> EvaluationTcs { get; set; } = new();
+    private TaskCompletionSource<EvaluationCollection> EvaluationTcs { get; set; } = new();
 
     /// <summary>
     /// Manages the state of ongoing position evaluations.
@@ -218,7 +219,7 @@ public class UciEngine : IUciEngine
     /// This method collects evaluation information during the search process and returns
     /// the final evaluation at the specified depth. Only one evaluation can run at a time.
     /// </remarks>
-    public async Task<string> EvaluateAsync(int depth = 20, CancellationToken cancellationToken = default)
+    public async Task<EvaluationCollection> EvaluateAsync(int depth = 20, CancellationToken cancellationToken = default)
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
@@ -249,7 +250,7 @@ public class UciEngine : IUciEngine
     /// This method collects evaluation information during the search process and returns
     /// the final evaluation. The time limit is converted to milliseconds for the UCI protocol.
     /// </remarks>
-    public async Task<string> EvaluateAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default)
+    public async Task<EvaluationCollection> EvaluateAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default)
     {
         using (await _evaluationLock.AcquireAsync(cancellationToken))
         {
@@ -465,7 +466,11 @@ public class UciEngine : IUciEngine
     private async Task HandleSearchEndAsync()
     {
         using var evaluationLock = await _evaluationLock.AcquireAsync();
-        EvaluationTcs.TrySetResult(EvaluationState.Values[1][EvaluationState.MaxDepth]);
+
+        var enumerable = EvaluationState.Values.Select(x => x.Value[EvaluationState.MaxDepth]);
+        var evaluationCollection = new EvaluationCollection(enumerable);
+
+        EvaluationTcs.TrySetResult(evaluationCollection);
         EvaluationState.Active = false;
     }
 
@@ -491,7 +496,7 @@ public class UciEngine : IUciEngine
         }
 
 
-        if (!depthResults.TryAdd(result.Depth, result.Score)) return;
+        if (!depthResults.TryAdd(result.Depth, new Evaluation(result.Depth, result.MultiPv, result.Score))) return;
 
         if (EvaluationState.MaxDepth < result.Depth) EvaluationState.MaxDepth = result.Depth;
     }
@@ -546,7 +551,7 @@ internal class UciEvaluationState
     /// <summary>
     /// A thread-safe dictionary that maps search depths to their corresponding evaluations.
     /// </summary>
-    public ConcurrentDictionary<int, ConcurrentDictionary<int, string>> Values = new();
+    public ConcurrentDictionary<int, ConcurrentDictionary<int, Evaluation>> Values = new();
 
     /// <summary>
     /// Resets the evaluation state to its initial values.
