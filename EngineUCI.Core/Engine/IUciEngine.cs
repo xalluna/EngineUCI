@@ -16,8 +16,27 @@ public interface IUciEngine : IDisposable
     /// </value>
     public bool IsInitialized { get; }
 
+    /// <summary>
+    /// Gets a value indicating whether this UCI engine instance has been disposed.
+    /// </summary>
+    /// <value>
+    /// <c>true</c> if <see cref="IDisposable.Dispose"/> has been called on this instance; otherwise, <c>false</c>.
+    /// </value>
+    /// <remarks>
+    /// Once an engine is disposed, no further commands should be sent to it. Checking this property
+    /// before use can prevent <see cref="ObjectDisposedException"/> errors from the underlying process.
+    /// </remarks>
     public bool IsDisposed { get; }
 
+    /// <summary>
+    /// Occurs when the UCI engine is disposed, allowing consumers to react to engine lifecycle events.
+    /// </summary>
+    /// <remarks>
+    /// This event is raised synchronously during the <see cref="IDisposable.Dispose"/> call, before
+    /// the underlying process resources are fully released. Subscribers such as engine pool managers
+    /// use this event to return pool slots or perform other cleanup. Avoid performing long-running
+    /// operations in event handlers as they block the dispose call.
+    /// </remarks>
     public event EventHandler? OnDispose;
 
     /// <summary>

@@ -1,6 +1,6 @@
 # EngineUCI.Core
 
-A .NET library for communicating with Universal Chess Interface (UCI) compliant chess engines. This library provides a clean, async/await-friendly API for engine communication, position setup, move calculation, and position evaluation.
+A .NET library for communicating with Universal Chess Interface (UCI) compliant chess engines. Provides a clean, async/await-friendly API for engine communication, position setup, move calculation, position evaluation, PGN parsing, and PGN-to-LAN conversion.
 
 ## Features
 
@@ -8,13 +8,12 @@ A .NET library for communicating with Universal Chess Interface (UCI) compliant 
 - **Async/Await Support**: All operations are asynchronous with proper cancellation support
 - **Thread-Safe**: Built-in locking mechanisms ensure safe concurrent operations
 - **Dependency Injection**: Built-in factory pattern with Microsoft.Extensions.DependencyInjection support
-- **Engine Pooling**: Resource pooling with configurable limits to manage multiple engine instances
-- **Easy to Use**: Simple, intuitive API for common chess engine operations
-- **Comprehensive**: Support for position setup (FEN/startpos), move calculation, evaluation, and engine management
+- **Engine Pooling**: Semaphore-based pooling with configurable limits to manage multiple engine instances
+- **Multi-PV Support**: Request and consume multiple principal variations per search
+- **PGN Parsing**: Parse single or multiple PGN games from text or files
+- **PGN to LAN Conversion**: Convert PGN algebraic notation to Long Algebraic Notation (LAN) for engine input
 
 ## Installation
-
-Add the EngineUCI.Core project to your solution or install via NuGet (when published):
 
 ```bash
 dotnet add package EngineUCI.Core
@@ -22,122 +21,216 @@ dotnet add package EngineUCI.Core
 
 ## Quick Start
 
-### Basic Usage
-
 ```csharp
 using EngineUCI.Core.Engine;
+using EngineUCI.Core.Engine.Evaluations;
 
-// Create and start the engine
-var engine = new UciEngine(@"C:\path\to\your\engine.exe");
+var engine = new UciEngine(@"C:\engines\stockfish.exe");
 engine.Start();
 
-// Initialize the engine
 await engine.EnsureInitializedAsync();
-
-// Wait for engine to be ready
 await engine.WaitIsReady();
 
-// Set up the starting position
-await engine.SetPositionAsync(); // Uses standard starting position
+await engine.SetPositionAsync(); // Standard starting position
 
-// Get the best move with default depth (20 plies)
 string bestMove = await engine.GetBestMoveAsync();
 Console.WriteLine($"Best move: {bestMove}"); // e.g., "e2e4"
 
-// Clean up
 engine.Dispose();
 ```
 
-### Advanced Usage
+## Engine Usage
 
-#### Setting Custom Positions
+### Setting Positions
 
 ```csharp
-// Set position from FEN notation
-string fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-await engine.SetPositionAsync(fen, "");
+// Standard starting position
+await engine.SetPositionAsync();
 
-// Set position from starting position with moves
+// Starting position with moves
 await engine.SetPositionAsync("e2e4 e7e5 g1f3");
 
-// Set position from FEN with additional moves
-string fenPosition = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
-await engine.SetPositionAsync(fenPosition, "e2e4 e7e5");
+// FEN string
+await engine.SetPositionAsync("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", "");
+
+// FEN string with additional moves
+await engine.SetPositionAsync("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", "e2e4 e7e5");
 ```
 
-#### Getting Best Moves
+### Getting the Best Move
 
 ```csharp
-// Get best move with custom search depth
-string bestMove = await engine.GetBestMoveAsync(depth: 15);
+// Default depth (20)
+string move = await engine.GetBestMoveAsync();
 
-// Get best move with time limit
-string bestMove = await engine.GetBestMoveAsync(TimeSpan.FromSeconds(5));
+// Custom depth
+string move = await engine.GetBestMoveAsync(depth: 15);
 
-// Get best move with cancellation support
+// Time limit
+string move = await engine.GetBestMoveAsync(TimeSpan.FromSeconds(5));
+
+// With cancellation
 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-try
-{
-    string bestMove = await engine.GetBestMoveAsync(20, cts.Token);
-}
-catch (OperationCanceledException)
-{
-    Console.WriteLine("Move calculation was cancelled");
-}
+string move = await engine.GetBestMoveAsync(20, cts.Token);
 ```
 
-#### Position Evaluation
+### Evaluating a Position
+
+`EvaluateAsync` returns an `EvaluationCollection` — an ordered, enumerable collection of `Evaluation` records, one per principal variation.
 
 ```csharp
-// Evaluate current position with default depth
-string evaluation = await engine.EvaluateAsync();
-Console.WriteLine($"Position evaluation: {evaluation} centipawns");
+EvaluationCollection result = await engine.EvaluateAsync(depth: 20);
 
-// Evaluate with custom depth
-string evaluation = await engine.EvaluateAsync(depth: 18);
+// Access the best line
+Evaluation best = result.BestEvaluation;
+Console.WriteLine($"Score: {best.Score} cp at depth {best.Depth}");
 
-// Evaluate with time limit
-string evaluation = await engine.EvaluateAsync(TimeSpan.FromSeconds(3));
+// Iterate all lines
+foreach (Evaluation eval in result)
+    Console.WriteLine($"Rank {eval.Rank}: {eval.Score}");
+```
+
+Each `Evaluation` record has three fields:
+
+| Field   | Type     | Description |
+|---------|----------|-------------|
+| `Depth` | `int`    | Search depth in plies |
+| `Rank`  | `int`    | Principal variation rank (1 = best) |
+| `Score` | `string` | Score in centipawns or mate notation (e.g., `"34"`, `"mate 3"`) |
+
+### Multi-PV (Multiple Lines)
+
+Call `SetMultiPvAsync` before searching to request multiple principal variations. The returned `EvaluationCollection` will contain one `Evaluation` per PV, ordered by rank.
+
+```csharp
+await engine.SetMultiPvAsync(3); // Request top 3 lines
+
+await engine.SetPositionAsync("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1", "");
+
+EvaluationCollection result = await engine.EvaluateAsync(depth: 20);
+
+foreach (Evaluation eval in result)
+    Console.WriteLine($"Line {eval.Rank}: {eval.Score} cp");
+
+// Reset to single PV
+await engine.SetMultiPvAsync(1);
+```
+
+## PGN Parsing
+
+`PgnParser` converts PGN text into structured `PgnGame` objects. It handles the Seven Tag Roster headers, move text, comments, variations, and NAGs.
+
+```csharp
+using EngineUCI.Core.Parsing;
+
+var parser = new PgnParser();
+
+// Parse a single game
+PgnGame game = parser.ParseGame("""
+    [Event "World Championship"]
+    [White "Kasparov"]
+    [Black "Deep Blue"]
+    [Result "1-0"]
+
+    1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 1-0
+    """);
+
+Console.WriteLine(game.Headers["White"]); // Kasparov
+Console.WriteLine(game.Moves[0]);         // e4
+Console.WriteLine(game.Result);           // 1-0
+
+// Parse multiple games from a file or string
+List<PgnGame> games = parser.ParseMultipleGames(File.ReadAllText("games.pgn"));
+Console.WriteLine($"Loaded {games.Count} games");
+```
+
+`PgnGame` properties:
+
+| Property  | Type                        | Description |
+|-----------|-----------------------------|-------------|
+| `Headers` | `Dictionary<string, string>`| PGN tag pairs |
+| `Moves`   | `List<string>`              | Clean move list (no annotations or symbols) |
+| `Result`  | `string`                    | `"1-0"`, `"0-1"`, `"1/2-1/2"`, or `"*"` |
+
+## PGN to LAN Conversion
+
+`PgnToLanConverter` converts PGN algebraic notation (e.g., `"Nf3"`) into Long Algebraic Notation (e.g., `"g1f3"`) suitable for UCI engine input. It maintains an internal board state across successive calls.
+
+```csharp
+using EngineUCI.Core.Conversions;
+
+var converter = new PgnToLanConverter();
+
+string lan1 = converter.ConvertMove("e4");    // "e2e4"
+string lan2 = converter.ConvertMove("e5");    // "e7e5"
+string lan3 = converter.ConvertMove("Nf3");   // "g1f3"
+string lan4 = converter.ConvertMove("O-O");   // "e1g1"
+string lan5 = converter.ConvertMove("e8=Q");  // "e7e8=Q"
+
+// Reset board for a new game
+converter.Reset();
+```
+
+Supported move types:
+
+| PGN Input   | LAN Output  | Description |
+|-------------|-------------|-------------|
+| `e4`        | `e2e4`      | Pawn push |
+| `exd5`      | `e4d5`      | Pawn capture |
+| `Nf3`       | `g1f3`      | Piece move |
+| `Ngf3`      | `g1f3`      | Disambiguated piece move |
+| `O-O`       | `e1g1`      | Kingside castling |
+| `O-O-O`     | `e1c1`      | Queenside castling |
+| `e8=Q`      | `e7e8=Q`    | Promotion |
+
+`ConvertMove` throws `ArgumentException` for null/empty input and `InvalidMoveException` if no legal piece can reach the destination square.
+
+### PGN to Engine Pipeline
+
+A common pattern is to parse a PGN game, convert its moves to LAN, and feed them to the engine:
+
+```csharp
+using EngineUCI.Core.Engine;
+using EngineUCI.Core.Parsing;
+using EngineUCI.Core.Conversions;
+
+var parser    = new PgnParser();
+var converter = new PgnToLanConverter();
+var engine    = new UciEngine(@"C:\engines\stockfish.exe");
+
+// Parse PGN
+PgnGame game = parser.ParseGame(pgnText);
+
+// Convert moves to LAN
+string lanMoves = string.Join(" ", game.Moves.Select(m => converter.ConvertMove(m)));
+
+// Feed to engine
+engine.Start();
+await engine.EnsureInitializedAsync();
+await engine.WaitIsReady();
+await engine.SetNewGameAsync();
+await engine.SetPositionAsync(lanMoves);
+
+EvaluationCollection result = await engine.EvaluateAsync(depth: 20);
+Console.WriteLine($"Final position: {result.BestEvaluation.Score} cp");
 ```
 
 ## Dependency Injection & Engine Pooling
 
-EngineUCI.Core provides built-in dependency injection support with engine pooling capabilities. This allows you to manage multiple engine instances efficiently in applications using Microsoft.Extensions.DependencyInjection.
-
-### Overview
-
-The dependency injection system includes:
-
-- **IUciEngineFactory**: Factory interface for creating and managing engine instances
-- **UciEngineFactory**: Implementation with built-in resource pooling using semaphores
-- **Engine Pooling**: Configurable pool size to limit concurrent engine usage
-- **Named Registrations**: Register multiple engine types with different configurations
-- **Automatic Resource Management**: Engines automatically release pool resources on disposal
-
-### Basic Setup
-
-#### ASP.NET Core Integration
+### ASP.NET Core Setup
 
 ```csharp
 using EngineUCI.Core.DependencyInjection;
 
-var builder = WebApplication.CreateBuilder(args);
-
-// Configure the engine factory with dependency injection
 builder.Services.UseUciEngineFactory(settings =>
 {
-    // Configure pool size (default: 16)
     settings.MaxPoolSize = 10;
-
-    // Register named engines
     settings.RegisterNamedEngine("stockfish", () => new UciEngine(@"C:\engines\stockfish.exe"));
-    settings.RegisterNamedEngine("komodo", () => new UciEngine(@"C:\engines\komodo.exe"));
+    settings.RegisterNamedEngine("komodo",    () => new UciEngine(@"C:\engines\komodo.exe"));
 });
-
-var app = builder.Build();
 ```
 
-#### Console Application with DI
+### Console Application with DI
 
 ```csharp
 using Microsoft.Extensions.DependencyInjection;
@@ -155,157 +248,51 @@ var host = Host.CreateDefaultBuilder()
     })
     .Build();
 
-// Get the factory from DI
-var engineFactory = host.Services.GetRequiredService<IUciEngineFactory>();
+var factory = host.Services.GetRequiredService<IUciEngineFactory>();
 ```
 
-### Advanced Configuration
-
-#### Multiple Engine Types with Custom Settings
+### Using the Factory
 
 ```csharp
-builder.Services.UseUciEngineFactory(settings =>
-{
-    settings.MaxPoolSize = 20; // Allow up to 20 concurrent engines
+// Async (preferred — waits for a pool slot if needed)
+using var engine = await factory.GetEngineAsync("stockfish");
 
-    // High-performance Stockfish for analysis
-    settings.RegisterNamedEngine("stockfish-analysis", () =>
-    {
-        var engine = new UciEngine(@"C:\engines\stockfish.exe");
-        // Engine will be configured when retrieved
-        return engine;
-    });
-
-    // Quick evaluation engine with different settings
-    settings.RegisterNamedEngine("stockfish-quick", () =>
-        new UciEngine(@"C:\engines\stockfish.exe"));
-
-    // Different engine entirely
-    settings.RegisterNamedEngine("komodo", () =>
-        new UciEngine(@"C:\engines\komodo.exe"));
-});
+// Sync
+using var engine = factory.GetEngine("stockfish");
 ```
 
-### Usage Patterns
+The engine factory uses `SemaphoreSlim` internally. When `MaxPoolSize` engines are in use, `GetEngineAsync` awaits until a slot is released. Disposing the engine automatically returns its pool slot.
 
-#### In Controllers (ASP.NET Core)
+### In a Controller
 
 ```csharp
 [ApiController]
-[Route("api/[controller]")]
-public class ChessAnalysisController : ControllerBase
+[Route("api/chess")]
+public class ChessController : ControllerBase
 {
     private readonly IUciEngineFactory _engineFactory;
 
-    public ChessAnalysisController(IUciEngineFactory engineFactory)
-    {
+    public ChessController(IUciEngineFactory engineFactory) =>
         _engineFactory = engineFactory;
-    }
 
     [HttpPost("analyze")]
-    public async Task<IActionResult> AnalyzePosition([FromBody] AnalysisRequest request)
+    public async Task<IActionResult> Analyze([FromBody] AnalysisRequest request)
     {
-        // Get engine from pool - automatically managed
-        using var engine = await _engineFactory.GetEngineAsync("stockfish-analysis");
-
         try
         {
+            using var engine = await _engineFactory.GetEngineAsync("stockfish");
+
             engine.Start();
             await engine.EnsureInitializedAsync();
             await engine.WaitIsReady();
-
             await engine.SetPositionAsync(request.Fen, request.Moves);
 
-            var bestMove = await engine.GetBestMoveAsync(request.Depth);
-            var evaluation = await engine.EvaluateAsync(request.Depth);
-
-            return Ok(new { BestMove = bestMove, Evaluation = evaluation });
+            var result = await engine.EvaluateAsync(request.Depth);
+            return Ok(new { BestMove = await engine.GetBestMoveAsync(request.Depth), Score = result.BestEvaluation.Score });
         }
-        catch (KeyNotFoundException)
-        {
-            return BadRequest("Engine 'stockfish-analysis' is not registered");
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, $"Engine error: {ex.Message}");
-        }
-        // Engine automatically disposed and pool resource released
+        catch (KeyNotFoundException)  { return BadRequest("Engine not registered."); }
+        catch (ObjectDisposedException) { return StatusCode(503, "Service is shutting down."); }
     }
-}
-```
-
-#### In Services
-
-```csharp
-public class ChessAnalysisService
-{
-    private readonly IUciEngineFactory _engineFactory;
-
-    public ChessAnalysisService(IUciEngineFactory engineFactory)
-    {
-        _engineFactory = engineFactory;
-    }
-
-    public async Task<AnalysisResult> AnalyzePositionAsync(string engineName, string fen, int depth = 20)
-    {
-        using var engine = await _engineFactory.GetEngineAsync(engineName);
-
-        engine.Start();
-        await engine.EnsureInitializedAsync();
-        await engine.SetPositionAsync(fen, "");
-
-        var bestMoveTask = engine.GetBestMoveAsync(depth);
-        var evaluationTask = engine.EvaluateAsync(depth);
-
-        await Task.WhenAll(bestMoveTask, evaluationTask);
-
-        return new AnalysisResult
-        {
-            BestMove = bestMoveTask.Result,
-            Evaluation = evaluationTask.Result,
-            EngineName = engineName
-        };
-    }
-}
-```
-
-### Resource Management & Pool Behavior
-
-#### Pool Limits
-
-The engine factory uses a `SemaphoreSlim` to limit concurrent engine usage:
-
-```csharp
-// Configure pool size
-settings.MaxPoolSize = 8; // Maximum 8 concurrent engines
-
-// When pool is full:
-var engine1 = await factory.GetEngineAsync("stockfish"); // Gets engine immediately
-var engine2 = await factory.GetEngineAsync("stockfish"); // Gets engine immediately
-// ... 8 engines acquired ...
-var engine9 = await factory.GetEngineAsync("stockfish"); // Waits until an engine is disposed
-```
-
-#### Automatic Resource Release
-
-Engines automatically release their pool slot when disposed:
-
-```csharp
-// Pool resource is automatically released when engine is disposed
-using (var engine = await factory.GetEngineAsync("stockfish"))
-{
-    // Use engine...
-} // Pool slot automatically released here
-
-// Or with explicit disposal
-var engine = await factory.GetEngineAsync("stockfish");
-try
-{
-    // Use engine...
-}
-finally
-{
-    engine.Dispose(); // Pool slot released
 }
 ```
 
@@ -314,301 +301,144 @@ finally
 ```csharp
 try
 {
-    using var engine = await engineFactory.GetEngineAsync("nonexistent-engine");
-    // ... use engine
+    using var engine = await factory.GetEngineAsync("nonexistent");
 }
-catch (KeyNotFoundException ex)
+catch (KeyNotFoundException)
 {
-    // Handle unregistered engine name
-    _logger.LogError("Engine not found: {Message}", ex.Message);
-    return BadRequest("Requested engine is not available");
+    // Engine name was not registered
 }
 catch (ObjectDisposedException)
 {
-    // Handle factory disposal (during shutdown)
-    return StatusCode(503, "Service is shutting down");
-}
-```
-
-### Best Practices
-
-1. **Always Use `using` Statements**: Ensures proper disposal and pool resource release
-2. **Configure Appropriate Pool Sizes**: Balance between resource usage and concurrent capacity
-3. **Register Engines at Startup**: Avoid runtime registration for better performance
-4. **Handle Missing Engines**: Always catch `KeyNotFoundException` for robustness
-5. **Use Async Methods**: Prefer `GetEngineAsync()` to avoid blocking threads
-6. **Monitor Pool Usage**: Consider logging or metrics to track pool utilization
-
-### Complete Example
-
-Here's a complete ASP.NET Core Web API example using dependency injection:
-
-```csharp
-using EngineUCI.Core.DependencyInjection;
-using Microsoft.AspNetCore.Mvc;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Configure services
-builder.Services.AddControllers();
-builder.Services.UseUciEngineFactory(settings =>
-{
-    settings.MaxPoolSize = 10;
-    settings.RegisterNamedEngine("stockfish", () => new UciEngine(@"C:\engines\stockfish.exe"));
-    settings.RegisterNamedEngine("komodo", () => new UciEngine(@"C:\engines\komodo.exe"));
-});
-
-var app = builder.Build();
-
-app.MapControllers();
-app.Run();
-
-[ApiController]
-[Route("api/chess")]
-public class ChessController : ControllerBase
-{
-    private readonly IUciEngineFactory _engineFactory;
-
-    public ChessController(IUciEngineFactory engineFactory)
-    {
-        _engineFactory = engineFactory;
-    }
-
-    [HttpPost("move")]
-    public async Task<ActionResult<string>> GetBestMove(
-        [FromQuery] string engine = "stockfish",
-        [FromBody] MoveRequest request = null)
-    {
-        try
-        {
-            using var uciEngine = await _engineFactory.GetEngineAsync(engine);
-
-            uciEngine.Start();
-            await uciEngine.EnsureInitializedAsync();
-            await uciEngine.WaitIsReady();
-
-            await uciEngine.SetPositionAsync(request?.Fen ?? "", request?.Moves ?? "");
-            var bestMove = await uciEngine.GetBestMoveAsync(request?.Depth ?? 15);
-
-            return Ok(bestMove);
-        }
-        catch (KeyNotFoundException)
-        {
-            return NotFound($"Engine '{engine}' is not available");
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, ex.Message);
-        }
-    }
-}
-
-public class MoveRequest
-{
-    public string? Fen { get; set; }
-    public string? Moves { get; set; }
-    public int Depth { get; set; } = 20;
-}
-```
-
-### Complete Example
-
-```csharp
-using EngineUCI.Core.Engine;
-
-class Program
-{
-    static async Task Main(string[] args)
-    {
-        // Path to your UCI-compatible chess engine
-        string enginePath = @"C:\engines\stockfish\stockfish.exe";
-
-        using var engine = new UciEngine(enginePath);
-
-        try
-        {
-            // Start and initialize the engine
-            engine.Start();
-            await engine.EnsureInitializedAsync();
-            await engine.WaitIsReady();
-
-            Console.WriteLine("Engine initialized successfully");
-
-            // Analyze a specific position
-            string fen = "r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1";
-            await engine.SetPositionAsync(fen, "");
-
-            // Get evaluation and best move
-            var evaluationTask = engine.EvaluateAsync(depth: 20);
-            var bestMoveTask = engine.GetBestMoveAsync(depth: 20);
-
-            await Task.WhenAll(evaluationTask, bestMoveTask);
-
-            string evaluation = evaluationTask.Result;
-            string bestMove = bestMoveTask.Result;
-
-            Console.WriteLine($"Position: {fen}");
-            Console.WriteLine($"Best move: {bestMove}");
-            Console.WriteLine($"Evaluation: {evaluation} centipawns");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error: {ex.Message}");
-        }
-    }
+    // Factory was disposed (e.g., during application shutdown)
 }
 ```
 
 ## API Reference
 
-### IUciEngine Interface
+### `IUciEngine`
 
-The main interface for UCI engine communication.
-
-#### Properties
-
-- `bool IsInitialized` - Gets whether the engine has been successfully initialized
-
-#### Methods
-
-- `void Start()` - Starts the engine process and begins monitoring responses
-- `Task<string> GetBestMoveAsync(int depth, CancellationToken)` - Gets best move with specified depth
-- `Task<string> GetBestMoveAsync(TimeSpan timeSpan, CancellationToken)` - Gets best move with time limit
-- `Task<string> EvaluateAsync(int depth, CancellationToken)` - Evaluates position with specified depth
-- `Task<string> EvaluateAsync(TimeSpan timeSpan, CancellationToken)` - Evaluates position with time limit
-- `Task SetNewGameAsync(CancellationToken)` - Signals engine to start a new game
-- `Task SetPositionAsync(string fen, string moves, CancellationToken)` - Sets position from FEN with moves
-- `Task SetPositionAsync(string moves, CancellationToken)` - Sets position from startpos with moves
-- `Task<bool> WaitIsInitialized(CancellationToken)` - Waits for engine initialization
-- `Task<bool> WaitIsReady(CancellationToken)` - Waits for engine ready signal
-- `Task EnsureInitializedAsync(CancellationToken)` - Ensures initialization or throws exception
-
-### UciEngine Class
-
-Main implementation of the UCI engine wrapper.
-
-#### Constructor
-
-```csharp
-public UciEngine(string executablePath)
+```
+Namespace: EngineUCI.Core.Engine
 ```
 
-Creates a new UCI engine instance with the specified executable path.
+| Member | Description |
+|--------|-------------|
+| `bool IsInitialized` | Whether the engine has been successfully initialized |
+| `bool IsDisposed` | Whether the engine has been disposed |
+| `event EventHandler? OnDispose` | Raised just before the engine is disposed |
+| `void Start()` | Starts the engine process |
+| `Task EnsureInitializedAsync(CancellationToken)` | Waits for initialization or throws `UciEngineInitializationException` |
+| `Task<bool> WaitIsInitialized(CancellationToken)` | Waits for initialization; returns `false` on timeout |
+| `Task<bool> WaitIsReady(CancellationToken)` | Waits for `readyok`; returns `false` on timeout |
+| `Task SetNewGameAsync(CancellationToken)` | Sends `ucinewgame` |
+| `Task SetPositionAsync(string moves, CancellationToken)` | Sets position from startpos with moves |
+| `Task SetPositionAsync(string fen, string moves, CancellationToken)` | Sets position from FEN with moves |
+| `Task SetMultiPvAsync(int multiPvMode, CancellationToken)` | Sets the MultiPV option (default: 1) |
+| `Task<string> GetBestMoveAsync(int depth, CancellationToken)` | Returns best move at given depth |
+| `Task<string> GetBestMoveAsync(TimeSpan, CancellationToken)` | Returns best move within time limit |
+| `Task<EvaluationCollection> EvaluateAsync(int depth, CancellationToken)` | Evaluates position at given depth |
+| `Task<EvaluationCollection> EvaluateAsync(TimeSpan, CancellationToken)` | Evaluates position within time limit |
 
-#### Thread Safety
+### `EvaluationCollection`
 
-The `UciEngine` class is thread-safe. All public methods can be called concurrently from multiple threads. Internal locking mechanisms ensure proper synchronization of engine communication.
+```
+Namespace: EngineUCI.Core.Engine.Evaluations
+```
 
-### IUciEngineFactory Interface
+Ordered, enumerable collection of `Evaluation` results returned by `EvaluateAsync`. Implements `IEnumerable<Evaluation>`.
 
-Factory interface for creating and managing UCI engine instances with pooling support.
+| Member | Description |
+|--------|-------------|
+| `Evaluation BestEvaluation` | The rank-1 (best) evaluation |
+| `IEnumerator<Evaluation> GetEnumerator()` | Iterates evaluations ordered by rank ascending |
 
-#### Methods
+### `Evaluation`
 
-- `IUciEngine GetEngine(string name)` - Synchronously retrieves a registered engine by name
-- `Task<IUciEngine> GetEngineAsync(string name)` - Asynchronously retrieves a registered engine by name
+```
+Namespace: EngineUCI.Core.Engine.Evaluations
+public record Evaluation(int Depth, int Rank, string Score)
+```
 
-### UciEngineFactorySettings Class
+### `PgnParser`
 
-Configuration class for the engine factory.
+```
+Namespace: EngineUCI.Core.Parsing
+```
 
-#### Properties
+| Member | Description |
+|--------|-------------|
+| `PgnGame ParseGame(string pgnText)` | Parses a single PGN game |
+| `List<PgnGame> ParseMultipleGames(string pgnText)` | Parses all games in a PGN string |
 
-- `int MaxPoolSize` - Maximum number of concurrent engines (default: 16)
+### `PgnToLanConverter`
 
-#### Methods
+```
+Namespace: EngineUCI.Core.Conversions
+```
 
-- `void RegisterNamedEngine(string name, Func<IUciEngine> factoryFunc)` - Registers a named engine factory
-- `ReadOnlyDictionary<string, Func<IUciEngine>> GetRegistrations()` - Gets all registered engine factories
+| Member | Description |
+|--------|-------------|
+| `string ConvertMove(string pgnMove)` | Converts PGN move to LAN; updates internal board state |
+| `void Reset()` | Resets board to starting position |
 
-### ServiceCollectionExtensions Class
+### `IUciEngineFactory`
 
-Extension methods for Microsoft.Extensions.DependencyInjection integration.
+```
+Namespace: EngineUCI.Core.DependencyInjection
+```
 
-#### Methods
+| Member | Description |
+|--------|-------------|
+| `IUciEngine GetEngine(string name)` | Synchronously retrieves a pooled engine by name |
+| `Task<IUciEngine> GetEngineAsync(string name)` | Asynchronously retrieves a pooled engine by name |
 
-- `void UseUciEngineFactory(this IServiceCollection, Action<UciEngineFactorySettings>)` - Configures and registers the engine factory as a singleton
+### `UciEngineFactorySettings`
+
+```
+Namespace: EngineUCI.Core.DependencyInjection
+```
+
+| Member | Description |
+|--------|-------------|
+| `int MaxPoolSize` | Maximum concurrent engines (default: 16) |
+| `void RegisterNamedEngine(string name, Func<IUciEngine> factory)` | Registers a named engine factory |
+| `ReadOnlyDictionary<string, Func<IUciEngine>> GetRegistrations()` | Returns all registered factories |
 
 ## UCI Protocol Overview
 
-The Universal Chess Interface (UCI) is a open communication protocol that enables chess GUIs to communicate with chess engines. Key concepts:
+The Universal Chess Interface (UCI) is an open communication protocol between chess GUIs and chess engines.
 
-### Commands (GUI to Engine)
+**Commands (GUI → Engine):** `uci`, `isready`, `ucinewgame`, `position`, `go`, `stop`, `setoption`, `quit`
 
-- `uci` - Initialize UCI mode
-- `isready` - Synchronize engine
-- `ucinewgame` - Start new game
-- `position` - Set board position
-- `go` - Start calculating
-- `stop` - Stop calculating
-- `quit` - Exit engine
+**Responses (Engine → GUI):** `uciok`, `readyok`, `bestmove`, `info`, `id`
 
-### Responses (Engine to GUI)
-
-- `uciok` - Confirms UCI mode
-- `readyok` - Confirms ready state
-- `bestmove` - Returns best move found
-- `info` - Provides search information
-- `id` - Engine identification
-
-### Position Formats
-
-- **FEN**: `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
-- **Startpos**: Standard starting position
-- **Moves**: Algebraic notation like `e2e4 e7e5 g1f3`
+**Position formats:**
+- FEN: `rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1`
+- Moves: LAN notation like `e2e4 e7e5 g1f3`
 
 ## Engine Compatibility
 
-This library works with any UCI-compliant chess engine, including:
-
-- **Stockfish** - Open source engine
-- **Komodo** - Commercial engine
-- **Leela Chess Zero** - Neural network engine
-- **And many others** - Any UCI-compliant engine
+Works with any UCI-compliant chess engine, including Stockfish, Komodo, Leela Chess Zero, and others.
 
 ## Requirements
 
 - .NET 10.0 or higher
-- UCI-compliant chess engine executable
-
-## Error Handling
-
-The library provides specific exceptions for common error scenarios:
-
-```csharp
-try
-{
-    await engine.EnsureInitializedAsync();
-}
-catch (UciEngineInitializationException ex)
-{
-    // Handle engine initialization failure
-    Console.WriteLine($"Engine failed to initialize: {ex.Message}");
-}
-catch (OperationCanceledException)
-{
-    // Handle cancellation
-    Console.WriteLine("Operation was cancelled");
-}
-```
+- A UCI-compliant chess engine executable
 
 ## Best Practices
 
-1. **Always dispose engines**: Use `using` statements or call `Dispose()` explicitly
-2. **Handle cancellation**: Provide cancellation tokens for long-running operations
-3. **Initialize properly**: Call `Start()`, then `EnsureInitializedAsync()`
-4. **Check ready state**: Use `WaitIsReady()` before sending commands
-5. **Error handling**: Wrap operations in try-catch blocks
-6. **Thread safety**: The library is thread-safe, but avoid unnecessary concurrent operations
+1. **Always use `using` statements** — ensures proper disposal and pool slot release
+2. **Call `Start()` then `EnsureInitializedAsync()`** before any engine commands
+3. **Call `WaitIsReady()`** after position changes if precise synchronization is needed
+4. **Call `Reset()` on `PgnToLanConverter`** when starting a new game
+5. **Set Multi-PV before searching** — `SetMultiPvAsync` takes effect on the next `go` command
+6. **Handle `KeyNotFoundException`** when using named engines from the factory
+7. **Configure pool size appropriately** for your concurrency requirements
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License — see the LICENSE file for details.
 
 ## Support
 
-For issues, questions, or contributions:
-
-- Create an issue in the GitHub repository
-- Check existing documentation and examples
-- Review UCI protocol specification for engine compatibility questions
+For issues, questions, or contributions, open an issue in the GitHub repository.

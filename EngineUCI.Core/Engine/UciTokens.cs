@@ -411,36 +411,160 @@ public abstract class UciTokens
         public const string String = "string";
     }
 
+    /// <summary>
+    /// Contains well-known UCI option name strings used with the <see cref="Commands.SetOption"/> command.
+    /// Includes the standard options defined by the UCI specification as well as widely adopted
+    /// engine-specific options found in popular engines such as Stockfish, Komodo, and Leela Chess Zero.
+    /// </summary>
+    /// <remarks>
+    /// These constants correspond to the <c>name</c> token value in a <c>setoption name [name] value [value]</c>
+    /// command. Not every engine supports every option; always verify option availability via the engine's
+    /// <c>option</c> responses after sending the <c>uci</c> command.
+    /// </remarks>
     public static class OptionId
     {
         // Standard UCI Options
+
+        /// <summary>
+        /// Hash table size in megabytes. Larger values improve search performance by reducing
+        /// repeated position evaluations.
+        /// </summary>
         public const string Hash = "Hash";
+
+        /// <summary>
+        /// Path to a directory containing Nalimov endgame tablebases.
+        /// </summary>
         public const string NalimovPath = "NalimovPath";
+
+        /// <summary>
+        /// Cache size in megabytes allocated for Nalimov tablebase access.
+        /// </summary>
         public const string NalimovCache = "NalimovCache";
+
+        /// <summary>
+        /// Enables or disables pondering (thinking on the opponent's time).
+        /// </summary>
         public const string Ponder = "Ponder";
+
+        /// <summary>
+        /// Enables or disables the engine's built-in opening book.
+        /// </summary>
         public const string OwnBook = "OwnBook";
+
+        /// <summary>
+        /// Number of principal variations the engine should calculate and report simultaneously.
+        /// A value greater than 1 activates Multi-PV mode.
+        /// </summary>
         public const string MultiPv = "MultiPV";
+
+        /// <summary>
+        /// When enabled, the engine reports the currently searched line via <c>info currmove</c> responses.
+        /// </summary>
         public const string UciShowCurrLine = "UCI_ShowCurrLine";
+
+        /// <summary>
+        /// When enabled, the engine reports move refutations via <c>info refutation</c> responses.
+        /// </summary>
         public const string UciShowRefutations = "UCI_ShowRefutations";
+
+        /// <summary>
+        /// When enabled, the engine limits its playing strength to a target Elo rating.
+        /// </summary>
         public const string UciLimitStrength = "UCI_LimitStrength";
+
+        /// <summary>
+        /// The target Elo rating used when <see cref="UciLimitStrength"/> is enabled.
+        /// </summary>
         public const string UciElo = "UCI_Elo";
+
+        /// <summary>
+        /// When enabled, the engine runs in analysis mode, optimizing for depth rather than
+        /// practical playing considerations such as contempt.
+        /// </summary>
         public const string UciAnalyseMode = "UCI_AnalyseMode";
+
+        /// <summary>
+        /// Provides information about the human opponent to the engine (name, title, Elo, and whether
+        /// it is a computer), allowing the engine to adjust its behavior accordingly.
+        /// </summary>
         public const string UciOpponent = "UCI_Opponent";
+
+        /// <summary>
+        /// A short description of the engine, typically including name, version, and author.
+        /// </summary>
         public const string UciEngineAbout = "UCI_EngineAbout";
+
+        /// <summary>
+        /// Path to a directory containing Shredder endgame tablebases.
+        /// </summary>
         public const string UciShredderbasesPath = "UCI_ShredderbasesPath";
+
+        /// <summary>
+        /// Assigns a static value to a specific position, overriding the engine's own evaluation.
+        /// </summary>
         public const string UciSetPositionValue = "UCI_SetPositionValue";
-        
+
         // Common Engine-Specific Options (widely used)
+
+        /// <summary>
+        /// Number of CPU threads the engine should use during search. Higher values can improve
+        /// performance on multi-core systems.
+        /// </summary>
         public const string Threads = "Threads";
+
+        /// <summary>
+        /// Clears the transposition (hash) table. Acts as a button option with no associated value.
+        /// </summary>
         public const string ClearHash = "Clear Hash";
+
+        /// <summary>
+        /// Contempt factor in centipawns. A positive value makes the engine play riskier, avoiding draws;
+        /// a negative value makes it more draw-seeking.
+        /// </summary>
         public const string Contempt = "Contempt";
+
+        /// <summary>
+        /// Safety margin in milliseconds added to each move to avoid time forfeiture due to
+        /// network latency or system scheduling delays.
+        /// </summary>
         public const string MoveOverhead = "Move Overhead";
+
+        /// <summary>
+        /// A percentage multiplier (typically 10–100) that slows the engine's time usage,
+        /// causing it to use less time per move than the time management algorithm suggests.
+        /// </summary>
         public const string SlowMover = "Slow Mover";
+
+        /// <summary>
+        /// Nodes per millisecond ratio used to convert node count limits into time equivalents,
+        /// enabling node-count-based time management.
+        /// </summary>
         public const string NodesTime = "nodestime";
+
+        /// <summary>
+        /// Minimum time in milliseconds the engine will spend on any single move, regardless
+        /// of the time management calculation.
+        /// </summary>
         public const string MinimumThinkingTime = "Minimum Thinking Time";
+
+        /// <summary>
+        /// Semicolon-separated path(s) to directories containing Syzygy endgame tablebases.
+        /// </summary>
         public const string SyzygyPath = "SyzygyPath";
+
+        /// <summary>
+        /// Minimum search depth at which the engine will probe Syzygy tablebases.
+        /// </summary>
         public const string SyzygyProbeDepth = "SyzygyProbeDepth";
+
+        /// <summary>
+        /// Maximum number of pieces on the board for which the engine will probe Syzygy tablebases.
+        /// </summary>
         public const string SyzygyProbeLimit = "SyzygyProbeLimit";
+
+        /// <summary>
+        /// When enabled, the engine respects the 50-move draw rule when probing Syzygy tablebases.
+        /// </summary>
         public const string Syzygy50MoveRule = "Syzygy50MoveRule";
     }
 }

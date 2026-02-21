@@ -21,8 +21,27 @@ public class UciEngine : IUciEngine
     /// </value>
     public bool IsInitialized { get; private set; }
 
+    /// <summary>
+    /// Gets a value indicating whether this <see cref="UciEngine"/> instance has been disposed.
+    /// </summary>
+    /// <value>
+    /// <c>true</c> if <see cref="Dispose"/> has been called on this instance; otherwise, <c>false</c>.
+    /// </value>
+    /// <remarks>
+    /// Once the engine is disposed, the underlying process is terminated and all managed resources
+    /// are released. Any attempt to send commands after disposal may result in undefined behavior.
+    /// </remarks>
     public bool IsDisposed { get; private set; }
 
+    /// <summary>
+    /// Occurs when the <see cref="UciEngine"/> is disposed, allowing consumers to react to the engine
+    /// lifecycle event and perform associated cleanup such as releasing pool slots.
+    /// </summary>
+    /// <remarks>
+    /// This event is raised near the end of the <see cref="Dispose"/> method, after the underlying
+    /// process is terminated but before <see cref="GC.SuppressFinalize"/> is called. Handlers
+    /// should be lightweight to avoid blocking the dispose call.
+    /// </remarks>
     public event EventHandler? OnDispose;
 
     /// <summary>
@@ -349,6 +368,33 @@ public class UciEngine : IUciEngine
         await SendAsync(commandBuilder.ToString(), cancellationToken);
     }
 
+    /// <summary>
+    /// Asynchronously sets the number of principal variations (Multi-PV) the engine should calculate.
+    /// </summary>
+    /// <param name="multiPvMode">
+    /// The number of principal variations to calculate simultaneously. Must be a positive integer.
+    /// A value of <c>1</c> (the default) instructs the engine to report only the single best line.
+    /// Higher values cause the engine to report multiple ranked lines, which is useful for analysis.
+    /// </param>
+    /// <param name="cancellationToken">A cancellation token that can be used to cancel the operation.</param>
+    /// <returns>A task that represents the asynchronous operation.</returns>
+    /// <remarks>
+    /// This method sends a <c>setoption name MultiPV value [multiPvMode]</c> command to the engine.
+    /// The option takes effect on the next search command. When Multi-PV is greater than 1, each
+    /// subsequent call to <see cref="EvaluateAsync(int, CancellationToken)"/> or
+    /// <see cref="EvaluateAsync(TimeSpan, CancellationToken)"/> will populate the returned
+    /// <see cref="Evaluations.EvaluationCollection"/> with one <see cref="Evaluations.Evaluation"/> entry
+    /// per principal variation, ordered by rank.
+    /// </remarks>
+    /// <example>
+    /// <code>
+    /// // Request the top 3 lines from the engine
+    /// await engine.SetMultiPvAsync(3);
+    /// var evaluations = await engine.EvaluateAsync(depth: 20);
+    /// foreach (var eval in evaluations)
+    ///     Console.WriteLine($"Rank {eval.Rank}: {eval.Score}");
+    /// </code>
+    /// </example>
     public async Task SetMultiPvAsync(int multiPvMode = 1, CancellationToken cancellationToken = default)
     {
         var commandBuilder = new StringBuilder(UciTokens.Commands.SetOption)
