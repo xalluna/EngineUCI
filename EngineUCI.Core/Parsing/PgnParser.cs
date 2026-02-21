@@ -16,16 +16,16 @@ public class PgnGame
     {
         var sb = new StringBuilder();
         sb.AppendLine("=== PGN Game ===");
-        
+
         foreach (var header in Headers)
         {
             sb.AppendLine($"[{header.Key} \"{header.Value}\"]");
         }
-        
+
         sb.AppendLine();
         sb.AppendLine($"Moves: {string.Join(", ", Moves)}");
         sb.AppendLine($"Result: {Result}");
-        
+
         return sb.ToString();
     }
 }
@@ -44,32 +44,9 @@ public class PgnParser
     public PgnGame ParseGame(string pgnText)
     {
         var game = new PgnGame();
-        
-        var lines = pgnText.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
-        
-        var moveTextBuilder = new StringBuilder();
-        var inMoveText = false;
-        
-        foreach (var line in lines)
-        {
-            var trimmedLine = line.Trim();
-            
-            if (trimmedLine.StartsWith("[") && trimmedLine.EndsWith("]"))
-            {
-                ParseHeader(trimmedLine, game);
-            }
-            else if (!string.IsNullOrWhiteSpace(trimmedLine))
-            {
-                inMoveText = true;
-                moveTextBuilder.Append(trimmedLine + " ");
-            }
-        }
-        
-        if (inMoveText)
-        {
-            ParseMoveText(moveTextBuilder.ToString(), game);
-        }
-        
+        IProcessingState state = new InitialState(game);
+        foreach (var token in Tokenize(pgnText))
+            state = state.Process(token);
         return game;
     }
 
@@ -81,9 +58,9 @@ public class PgnParser
     public List<PgnGame> ParseMultipleGames(string pgnText)
     {
         var games = new List<PgnGame>();
-        
+
         var gameTexts = SplitIntoGames(pgnText);
-        
+
         foreach (var gameText in gameTexts)
         {
             if (!string.IsNullOrWhiteSpace(gameText))
@@ -91,7 +68,7 @@ public class PgnParser
                 games.Add(ParseGame(gameText));
             }
         }
-        
+
         return games;
     }
 
@@ -103,13 +80,13 @@ public class PgnParser
         var games = new List<string>();
         var currentGame = new StringBuilder();
         var lines = pgnText.Split(['\r', '\n'], StringSplitOptions.None);
-        
+
         var gameStarted = false;
-        
+
         foreach (var line in lines)
         {
             var trimmedLine = line.Trim();
-            
+
             // New game starts with [Event header
             if (trimmedLine.StartsWith("[Event "))
             {
@@ -120,139 +97,183 @@ public class PgnParser
                 }
                 gameStarted = true;
             }
-            
+
             if (gameStarted)
             {
                 currentGame.AppendLine(line);
             }
         }
-        
+
         // Add the last game
         if (currentGame.Length > 0)
         {
             games.Add(currentGame.ToString());
         }
-        
+
         return games;
     }
 
     /// <summary>
-    /// Parse a single PGN header line
+    /// Tokenize PGN text into a sequence of tokens, skipping comments, variations, and NAGs
     /// </summary>
-    private void ParseHeader(string headerLine, PgnGame game)
+    private static IEnumerable<string> Tokenize(string pgnText)
     {
-        // Format: [TagName "TagValue"]
-        var match = Regex.Match(headerLine, @"\[(\w+)\s+""([^""]*)""\]");
-        
-        if (match.Success)
+        var word = new StringBuilder();
+        int i = 0;
+        int len = pgnText.Length;
+
+        while (i < len)
         {
-            string tagName = match.Groups[1].Value;
-            string tagValue = match.Groups[2].Value;
-            game.Headers[tagName] = tagValue;
+            char c = pgnText[i];
+
+            if (c == '[')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                yield return "[";
+                i++;
+            }
+            else if (c == ']')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                yield return "]";
+                i++;
+            }
+            else if (c == '"')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                var quoted = new StringBuilder();
+                quoted.Append('"');
+                i++;
+                while (i < len && pgnText[i] != '"')
+                {
+                    quoted.Append(pgnText[i]);
+                    i++;
+                }
+                if (i < len) { quoted.Append('"'); i++; }
+                yield return quoted.ToString();
+            }
+            else if (c == '{')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                i++;
+                while (i < len && pgnText[i] != '}') i++;
+                if (i < len) i++;
+            }
+            else if (c == '(')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                int depth = 1;
+                i++;
+                while (i < len && depth > 0)
+                {
+                    if (pgnText[i] == '(') depth++;
+                    else if (pgnText[i] == ')') depth--;
+                    i++;
+                }
+            }
+            else if (c == '$')
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                i++;
+                while (i < len && char.IsDigit(pgnText[i])) i++;
+            }
+            else if (char.IsWhiteSpace(c))
+            {
+                if (word.Length > 0) { yield return word.ToString(); word.Clear(); }
+                i++;
+            }
+            else
+            {
+                word.Append(c);
+                i++;
+            }
+        }
+
+        if (word.Length > 0) yield return word.ToString();
+    }
+
+    private interface IProcessingState
+    {
+        IProcessingState Process(string token);
+    }
+
+    private class InitialState(PgnGame game) : IProcessingState
+    {
+        public IProcessingState Process(string token)
+        {
+            if (token == "[")
+                return new HeaderTagNameState(game);
+            return new MoveTextState(game).Process(token);
         }
     }
 
-    /// <summary>
-    /// Parse the moveText section, extracting only actual moves
-    /// </summary>
-    private void ParseMoveText(string moveText, PgnGame game)
+    private class HeaderTagNameState(PgnGame game) : IProcessingState
     {
-        // Remove comments in curly braces { }
-        moveText = Regex.Replace(moveText, @"\{[^}]*\}", " ");
-        
-        // Remove comments in parentheses (variations)
-        moveText = RemoveNestedParentheses(moveText);
-        
-        // Remove NAG (Numeric Annotation Glyphs) like $1, $2, etc.
-        moveText = Regex.Replace(moveText, @"\$\d+", " ");
-        
-        // Remove multiple spaces
-        moveText = Regex.Replace(moveText, @"\s+", " ").Trim();
-        
-        // Split into tokens
-        var tokens = moveText.Split([' '], StringSplitOptions.RemoveEmptyEntries);
-        
-        foreach (var token in tokens)
+        public IProcessingState Process(string token) =>
+            new HeaderTagValueState(game, token);
+    }
+
+    private class HeaderTagValueState(PgnGame game, string tagName) : IProcessingState
+    {
+        public IProcessingState Process(string token)
         {
-            var cleanToken = token.Trim();
-            
-            // Skip move numbers (e.g., "1.", "2.", "15...")
-            if (Regex.IsMatch(cleanToken, @"^\d+\.+$"))
-                continue;
-            
-            // Check for result markers
-            if (cleanToken == "1-0" || cleanToken == "0-1" || cleanToken == "1/2-1/2" || cleanToken == "*")
-            {
-                game.Result = cleanToken;
-                continue;
-            }
-            
-            // Check if it's a valid move
-            if (IsValidMove(cleanToken))
-            {
-                // Remove trailing annotation symbols but keep the core move
-                var move = CleanMove(cleanToken);
-                game.Moves.Add(move);
-            }
+            var value = token.Length >= 2 && token.StartsWith('"') && token.EndsWith('"')
+                ? token[1..^1]
+                : token;
+            return new HeaderCloseState(game, tagName, value);
         }
     }
 
-    /// <summary>
-    /// Remove nested parentheses (variations) from moveText
-    /// </summary>
-    private string RemoveNestedParentheses(string text)
+    private class HeaderCloseState(PgnGame game, string tagName, string tagValue) : IProcessingState
     {
-        var result = new StringBuilder();
-        int depth = 0;
-        
-        foreach (char c in text)
+        public IProcessingState Process(string token)
         {
-            if (c == '(')
-            {
-                depth++;
-            }
-            else if (c == ')')
-            {
-                depth--;
-            }
-            else if (depth == 0)
-            {
-                result.Append(c);
-            }
+            if (token == "]")
+                game.Headers[tagName] = tagValue;
+            return new InitialState(game);
         }
-        
-        return result.ToString();
     }
 
-    /// <summary>
-    /// Check if a token represents a valid chess move
-    /// </summary>
-    private bool IsValidMove(string token)
+    private class MoveTextState(PgnGame game) : IProcessingState
     {
-        if (string.IsNullOrWhiteSpace(token))
-            return false;
-        
-        // Remove annotation symbols for validation
-        var cleanToken = Regex.Replace(token, @"[+#!?]+$", "");
-        
-        // Castling
-        if (cleanToken == "O-O" || cleanToken == "O-O-O" || 
-            cleanToken == "0-0" || cleanToken == "0-0-0")
-            return true;
-        
-        // Regular move pattern: optional piece, optional file/rank, optional 'x', destination square, optional promotion
-        // Examples: e4, Nf3, exd5, Nbd7, R1a3, e8=Q, axb8=N
-        var movePattern = @"^[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](=[NBRQ])?$";
-        
-        return Regex.IsMatch(cleanToken, movePattern);
+        private static readonly Regex MoveNumberPattern = new(@"^\d+\.+$", RegexOptions.Compiled);
+        private static readonly Regex MovePattern = new(@"^[NBRQK]?[a-h]?[1-8]?x?[a-h][1-8](=[NBRQ])?$", RegexOptions.Compiled);
+        private static readonly Regex AnnotationPattern = new(@"[!?]+", RegexOptions.Compiled);
+        private static readonly HashSet<string> Results = ["1-0", "0-1", "1/2-1/2", "*"];
+        private static readonly HashSet<string> CastlingMoves = ["O-O", "O-O-O", "0-0", "0-0-0"];
+
+        public IProcessingState Process(string token)
+        {
+            if (MoveNumberPattern.IsMatch(token))
+                return this;
+
+            if (Results.Contains(token))
+            {
+                game.Result = token;
+                return new TerminalState();
+            }
+
+            if (IsValidMove(token))
+                game.Moves.Add(CleanMove(token));
+
+            return this;
+        }
+
+        private static bool IsValidMove(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+                return false;
+
+            var clean = AnnotationPattern.Replace(token, "").TrimEnd('+', '#');
+            return CastlingMoves.Contains(clean) || MovePattern.IsMatch(clean);
+        }
+
+        private static string CleanMove(string move) =>
+            AnnotationPattern.Replace(move, "");
     }
 
-    /// <summary>
-    /// Clean a move by removing annotation symbols while keeping check/checkmate indicators
-    /// </summary>
-    private string CleanMove(string move)
+    private class TerminalState : IProcessingState
     {
-        // Keep +, # but remove !, ?, and combinations like !!, !?, ?!, ??
-        return Regex.Replace(move, @"[!?]+", "");
+        public IProcessingState Process(string token) => this;
     }
 }
