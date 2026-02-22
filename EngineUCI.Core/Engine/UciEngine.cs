@@ -3,6 +3,8 @@ using System.Diagnostics;
 using System.Text;
 using EngineUCI.Core.Engine.Evaluations;
 using EngineUCI.Core.Parsing;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Lock = EngineUCI.Core.Locking.Lock;
 
 namespace EngineUCI.Core.Engine;
@@ -105,6 +107,18 @@ public class UciEngine : IUciEngine
     private readonly UciInfoResponseParser UciInfoResponseParser = new();
 
     /// <summary>
+    /// Gets or sets the logger used to record engine communication and lifecycle events.
+    /// Defaults to <see cref="NullLogger.Instance"/>, producing no output unless overridden.
+    /// Set by <see cref="EngineUCI.Core.DependencyInjection.UciEngineFactory"/> when creating engine instances.
+    /// </summary>
+    /// <remarks>
+    /// Raw UCI protocol lines are logged at <see cref="LogLevel.Trace"/> and lifecycle events
+    /// (uciok, readyok, bestmove) at <see cref="LogLevel.Debug"/>. Control verbosity via
+    /// log level configuration rather than toggling this property.
+    /// </remarks>
+    public ILogger Logger { get; set; } = NullLogger.Instance;
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="UciEngine"/> class.
     /// </summary>
     /// <param name="executablePath">The file path to the UCI chess engine executable.</param>
@@ -137,14 +151,26 @@ public class UciEngine : IUciEngine
 
             if (string.IsNullOrEmpty(e.Data)) return;
 
+            Logger.LogTrace("UCI << {Data}", e.Data);
+
             switch (e.Data)
             {
-                case UciTokens.Responses.UciOk: HandleInitialization(); break;
-                case UciTokens.Responses.ReadyOk: await HandleIsReadyAsync(); break;
+                case UciTokens.Responses.UciOk:
+                    Logger.LogDebug("Engine initialized (uciok received)");
+                    HandleInitialization();
+                    break;
+                case UciTokens.Responses.ReadyOk:
+                    Logger.LogDebug("Engine ready (readyok received)");
+                    await HandleIsReadyAsync();
+                    break;
             }
 
             if (e.Data.Contains(UciTokens.Responses.Info)) await HandleInfoReceivedAsync(e.Data);
-            if (e.Data.Contains(UciTokens.Responses.BestMove)) await HandleBestMoveAsync(e.Data);
+            if (e.Data.Contains(UciTokens.Responses.BestMove))
+            {
+                Logger.LogDebug("Best move received");
+                await HandleBestMoveAsync(e.Data);
+            }
             if (e.Data.Contains(UciTokens.Responses.BestMove) && EvaluationState.Active) await HandleSearchEndAsync();
         });
 
