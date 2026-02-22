@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using EngineUCI.Core.Engine;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EngineUCI.Core.DependencyInjection;
 
@@ -35,12 +37,21 @@ public class UciEngineFactory : IUciEngineFactory
     /// </value>
     private ReadOnlyDictionary<string, Func<IUciEngine>> Registrations { get; init; }
 
+    private readonly ILogger _factoryLogger;
+    private readonly ILogger _engineLogger;
+
     /// <summary>
     /// Initializes a new instance of the <see cref="UciEngineFactory"/> class with the specified settings.
     /// </summary>
     /// <param name="settings">
     /// The configuration settings that define the maximum pool size and registered engine factories.
     /// Cannot be null.
+    /// </param>
+    /// <param name="loggerFactory">
+    /// An optional <see cref="ILoggerFactory"/> used to create typed loggers for the factory and engines.
+    /// When registered via DI using <c>AddSingleton&lt;IUciEngineFactory, UciEngineFactory&gt;()</c>,
+    /// the DI container automatically injects this parameter. When null, <see cref="NullLogger.Instance"/>
+    /// is used and no logging output is produced.
     /// </param>
     /// <remarks>
     /// The constructor creates a semaphore with both initial and maximum counts set to the configured
@@ -50,10 +61,12 @@ public class UciEngineFactory : IUciEngineFactory
     /// <exception cref="ArgumentNullException">
     /// Thrown when <paramref name="settings"/> is null.
     /// </exception>
-    public UciEngineFactory(UciEngineFactorySettings settings)
+    public UciEngineFactory(UciEngineFactorySettings settings, ILoggerFactory? loggerFactory = null)
     {
         PoolSemaphore = new(settings.MaxPoolSize, settings.MaxPoolSize);
         Registrations = settings.GetRegistrations();
+        _factoryLogger = (ILogger?)loggerFactory?.CreateLogger<UciEngineFactory>() ?? NullLogger.Instance;
+        _engineLogger  = (ILogger?)loggerFactory?.CreateLogger<UciEngine>() ?? NullLogger.Instance;
     }
 
     /// <summary>
@@ -82,6 +95,7 @@ public class UciEngineFactory : IUciEngineFactory
     /// </remarks>
     public IUciEngine GetEngine(string name)
     {
+        _factoryLogger.LogDebug("Acquiring pool slot for '{Name}'", name);
         PoolSemaphore.Wait();
 
         var hasFactory = Registrations.TryGetValue(name, out var uciEngineFactory);
@@ -89,12 +103,19 @@ public class UciEngineFactory : IUciEngineFactory
         if (!hasFactory || uciEngineFactory is null)
         {
             PoolSemaphore.Release();
+            _factoryLogger.LogWarning("No engine registration found for '{Name}'", name);
             throw new KeyNotFoundException($"{nameof(UciEngineFactory)} does not have a registration for \'{name}\'");
         }
 
         var engine = uciEngineFactory();
-        engine.OnDispose += (_, __) => PoolSemaphore.Release();
+        if (engine is UciEngine uciEngine) uciEngine.Logger = _engineLogger;
+        engine.OnDispose += (_, __) =>
+        {
+            PoolSemaphore.Release();
+            _factoryLogger.LogDebug("Pool slot released for '{Name}' ({Available} slots now available)", name, PoolSemaphore.CurrentCount);
+        };
 
+        _factoryLogger.LogDebug("Engine '{Name}' acquired ({Available} slots remaining)", name, PoolSemaphore.CurrentCount);
         return engine;
     }
 
@@ -126,6 +147,7 @@ public class UciEngineFactory : IUciEngineFactory
     /// </remarks>
     public async Task<IUciEngine> GetEngineAsync(string name)
     {
+        _factoryLogger.LogDebug("Acquiring pool slot for '{Name}'", name);
         await PoolSemaphore.WaitAsync();
 
         var hasFactory = Registrations.TryGetValue(name, out var uciEngineFactory);
@@ -133,12 +155,19 @@ public class UciEngineFactory : IUciEngineFactory
         if (!hasFactory || uciEngineFactory is null)
         {
             PoolSemaphore.Release();
+            _factoryLogger.LogWarning("No engine registration found for '{Name}'", name);
             throw new KeyNotFoundException($"{nameof(UciEngineFactory)} does not have a registration for \'{name}\'");
         }
 
         var engine = uciEngineFactory();
-        engine.OnDispose += (_, __) => PoolSemaphore.Release();
+        if (engine is UciEngine uciEngine) uciEngine.Logger = _engineLogger;
+        engine.OnDispose += (_, __) =>
+        {
+            PoolSemaphore.Release();
+            _factoryLogger.LogDebug("Pool slot released for '{Name}' ({Available} slots now available)", name, PoolSemaphore.CurrentCount);
+        };
 
+        _factoryLogger.LogDebug("Engine '{Name}' acquired ({Available} slots remaining)", name, PoolSemaphore.CurrentCount);
         return engine;
     }
 }
@@ -168,6 +197,7 @@ public class UciEngineFactorySettings
     /// The value should be chosen based on available system resources and expected concurrent usage patterns.
     /// </remarks>
     public int MaxPoolSize { get; set; } = 16;
+
     /// <summary>
     /// Contains the internal dictionary of registered engine factory functions mapped by name.
     /// </summary>

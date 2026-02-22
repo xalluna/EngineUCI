@@ -31,12 +31,17 @@ public static class ServiceCollectionExtensions
     /// This extension method performs the following operations:
     /// 1. Creates a new <see cref="UciEngineFactorySettings"/> instance with default values
     /// 2. Invokes the provided configuration action to customize the settings (if provided)
-    /// 3. Creates a <see cref="UciEngineFactory"/> instance with the configured settings
-    /// 4. Registers the factory as a singleton <see cref="IUciEngineFactory"/> service
+    /// 3. Registers the settings as a singleton so the DI container can inject them
+    /// 4. Registers <see cref="UciEngineFactory"/> as a singleton <see cref="IUciEngineFactory"/> service
     ///
     /// The factory is registered as a singleton to ensure efficient resource management and
     /// consistent pool behavior across the application. All components that depend on
     /// <see cref="IUciEngineFactory"/> will receive the same factory instance.
+    ///
+    /// If the application has registered an <see cref="Microsoft.Extensions.Logging.ILoggerFactory"/>
+    /// (e.g. via <c>services.AddLogging(...)</c>), the DI container automatically injects it into
+    /// <see cref="UciEngineFactory"/>, enabling structured logging with no additional configuration.
+    /// Log verbosity is controlled through standard log-level configuration rather than a flag on settings.
     /// </remarks>
     /// <example>
     /// <code>
@@ -56,6 +61,7 @@ public static class ServiceCollectionExtensions
         var settings = new UciEngineFactorySettings();
         settingsAction?.Invoke(settings);
 
-        serviceCollection.AddSingleton<IUciEngineFactory>(new UciEngineFactory(settings));
+        serviceCollection.AddSingleton(settings);
+        serviceCollection.AddSingleton<IUciEngineFactory, UciEngineFactory>();
     }
 }
